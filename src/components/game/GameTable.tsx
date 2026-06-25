@@ -41,25 +41,25 @@ function newGame(): GameState {
 }
 
 export default function GameTable() {
-  const [state, setState] = useState<GameState>(newGame)
+  // 配札は Math.random を使うため、SSRとクライアントで結果が変わりハイドレーション不一致になる。
+  // 初期ゲームはクライアントのマウント後に生成し、SSR中は決定的なプレースホルダを描画する。
+  const [state, setState] = useState<GameState | null>(null)
   const [selected, setSelected] = useState<Card | null>(null)
 
-  const ended = state.phase === 'ended'
-  const current = ended ? null : currentPlayer(state)
-  const isHumanTurn = current?.id === HUMAN_ID
-  const human = state.players.find((p) => p.id === HUMAN_ID)!
-  const canPlay = isHumanTurn && !!selected && isPlayable(selected, state.board)
+  useEffect(() => {
+    setState(newGame())
+  }, [])
 
   // CPUの手番を自動進行（思考待ち演出つき）。
   useEffect(() => {
-    if (state.phase === 'ended') return
+    if (!state || state.phase === 'ended') return
     const cur = currentPlayer(state)
     if (cur.id === HUMAN_ID) return
 
     const cpuId = cur.id
     const timer = setTimeout(() => {
       setState((prev) => {
-        if (prev.phase === 'ended') return prev
+        if (!prev || prev.phase === 'ended') return prev
         const p = currentPlayer(prev)
         if (p.id !== cpuId) return prev // 既に進んでいたら何もしない
         const action = decideWeak(prev, cpuId)
@@ -76,8 +76,22 @@ export default function GameTable() {
     return () => clearTimeout(timer)
   }, [state])
 
+  if (!state) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-green-800 text-2xl font-bold text-white">
+        7並べ　準備中…
+      </div>
+    )
+  }
+
+  const ended = state.phase === 'ended'
+  const current = ended ? null : currentPlayer(state)
+  const isHumanTurn = current?.id === HUMAN_ID
+  const human = state.players.find((p) => p.id === HUMAN_ID)!
+  const canPlay = isHumanTurn && !!selected && isPlayable(selected, state.board)
+
   function handlePlay() {
-    if (!canPlay || !selected) return
+    if (!state || !canPlay || !selected) return
     try {
       setState(playCard(state, HUMAN_ID, selected))
       setSelected(null)
@@ -87,7 +101,7 @@ export default function GameTable() {
   }
 
   function handlePass() {
-    if (!isHumanTurn) return
+    if (!state || !isHumanTurn) return
     setState(pass(state, HUMAN_ID))
     setSelected(null)
   }
