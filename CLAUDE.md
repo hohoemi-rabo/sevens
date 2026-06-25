@@ -23,6 +23,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `docs/00-overview.md` のチケット一覧自体も同じ運用。チケットを完了したら overview 側のチェックも `- [x]` にする
 - 作業を進めたら、該当チケットの Todo と overview のチェック状態を必ず更新する
 
+**進捗（最新の正は `docs/00-overview.md`）**:
+- ✅ フェーズ1（01〜06）: ゲームロジック土台＋ローカル単独でCPU対戦が動く
+- ✅ フェーズ2（07〜09）: ルール完成（パス/脱落・順位）＋ロジック層の単体テスト整備
+- ▶ 次はフェーズ3（10〜13）: 通信層(Socket.io/LocalAdapter/server.ts)・部屋管理・CPU難易度(弱/中/強)・再接続
+- 1チケット完了ごとにコンベンショナルコミット。各チケットの実装方針・確定事項はコミット履歴と本ファイル下部「確定済み設計判断」を参照
+
 ## コマンド
 
 ```bash
