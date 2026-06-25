@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "cards:generate": "node scripts/generate-cards.mjs"
   },
   "dependencies": {
     "next": "15.5.19",
