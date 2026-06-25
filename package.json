@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "cards:generate": "node scripts/generate-cards.mjs"
   },
   "dependencies": {
@@ -21,6 +22,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitest/coverage-v8": "^4.1.9",
     "autoprefixer": "^10",
     "eslint": "^9",
     "eslint-config-next": "15.5.19",

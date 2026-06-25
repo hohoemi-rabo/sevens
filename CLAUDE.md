@@ -32,6 +32,7 @@ npm run start          # ビルド済みアプリの起動
 npm run lint           # ESLint（next/core-web-vitals + next/typescript）
 npm run test           # Vitest（watch）
 npm run test:run       # Vitest（1回実行・CI/検証用）
+npm run test:coverage  # Vitest + カバレッジ（@vitest/coverage-v8、src/lib/sevens/** 対象）
 npm run cards:generate # トランプSVG 53枚を public/cards/ に再生成
 ```
 

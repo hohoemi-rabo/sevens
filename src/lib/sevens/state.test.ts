@@ -112,6 +112,32 @@ describe('initGame', () => {
   })
 })
 
+describe('initGame バリデーション', () => {
+  const fourPlayers = [
+    { id: 'a', name: 'A' },
+    { id: 'b', name: 'B' },
+    { id: 'c', name: 'C' },
+    { id: 'd', name: 'D' },
+  ]
+  it('パス上限が範囲外（0・6・非整数）は例外', () => {
+    for (const maxPass of [0, 6, 2.5]) {
+      expect(() =>
+        initGame({ players: fourPlayers, maxPass, startMode: 'diamond7', rng: seededRng(1) }),
+      ).toThrow()
+    }
+  })
+})
+
+describe('終了後の操作は例外', () => {
+  const ended = (): GameState => ({ ...makeState([[c('d', 8)], [c('h', 1)]]), phase: 'ended' })
+  it('playCard は終了後に例外', () => {
+    expect(() => playCard(ended(), 'p0', c('d', 8))).toThrow()
+  })
+  it('pass は終了後に例外', () => {
+    expect(() => pass(ended(), 'p0')).toThrow()
+  })
+})
+
 describe('playCard', () => {
   it('場・手札・手番を更新する', () => {
     const state = makeState([[c('d', 8), c('s', 2)], [c('h', 1)]])
@@ -165,6 +191,11 @@ describe('pass', () => {
     const next = pass(state, 'p0')
     expect(next.players[0].passesLeft).toBe(2)
     expect(next.currentSeat).toBe(1)
+  })
+
+  it('手番でないプレイヤーのパスは例外', () => {
+    const state = makeState([[c('s', 2)], [c('h', 1)]], { currentSeat: 0 })
+    expect(() => pass(state, 'p1')).toThrow()
   })
 
   it('上限超過のパスで脱落: 手札を場に放出し、以降の手番から除外される', () => {

@@ -20,7 +20,7 @@
 ### フェーズ2：ルール完成
 - [x] [07. パス回数・脱落管理](./07-pass-elimination.md)
 - [x] [08. 順位判定](./08-ranking.md)
-- [ ] [09. ゲームロジック単体テスト](./09-logic-unit-tests.md)
+- [x] [09. ゲームロジック単体テスト](./09-logic-unit-tests.md)
 
 ### フェーズ3：ローカル4人対戦
 - [ ] [10. 通信層（Socket.io / LocalAdapter / server.ts）](./10-communication-socketio.md)

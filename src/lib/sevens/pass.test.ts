@@ -50,4 +50,8 @@ describe('isWastefulPass', () => {
   it('出せる札がなければ無駄パスではない', () => {
     expect(isWastefulPass(state([c('s', 2)]), 'p0')).toBe(false)
   })
+
+  it('存在しないプレイヤーIDは false', () => {
+    expect(isWastefulPass(state([c('d', 8)]), 'ghost')).toBe(false)
+  })
 })

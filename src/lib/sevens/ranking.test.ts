@@ -73,6 +73,18 @@ describe('computeStandings', () => {
     expect(result[2].outcome).toBe('playing')
   })
 
+  it('rank/eliminatedOrder が未設定でも例外を投げず安定に並ぶ（防御）', () => {
+    const s = state([
+      player({ id: 'f-norank', status: 'finished' }), // rank なし → 0 扱い
+      player({ id: 'f1', status: 'finished', rank: 1 }),
+      player({ id: 'e1', status: 'eliminated' }), // eliminatedOrder なし → 0 扱い
+      player({ id: 'e2', status: 'eliminated', eliminatedOrder: 2 }),
+    ])
+    const result = computeStandings(s)
+    // finished が先（rank 昇順、未設定=0 は先頭）→ eliminated（eliminatedOrder 降順、未設定=0 は後ろ）
+    expect(result.map((x) => x.player.id)).toEqual(['f-norank', 'f1', 'e2', 'e1'])
+  })
+
   it('構造が結果画面で使える形（player 参照・outcome・rank）', () => {
     const s = state([player({ id: 'a', name: 'Alice', status: 'finished', rank: 1 })])
     const top = computeStandings(s)[0]

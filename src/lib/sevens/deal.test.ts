@@ -57,4 +57,9 @@ describe('deal', () => {
   it('均等に割り切れない場合は例外', () => {
     expect(() => deal(createDeck(), 3)).toThrow()
   })
+
+  it('人数が0以下は例外', () => {
+    expect(() => deal(createDeck(), 0)).toThrow()
+    expect(() => deal(createDeck(), -1)).toThrow()
+  })
 })
