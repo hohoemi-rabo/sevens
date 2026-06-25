@@ -18,7 +18,7 @@
 - [x] [06. CPU1人と対戦できる状態](./06-cpu-basic.md)
 
 ### フェーズ2：ルール完成
-- [ ] [07. パス回数・脱落管理](./07-pass-elimination.md)
+- [x] [07. パス回数・脱落管理](./07-pass-elimination.md)
 - [ ] [08. 順位判定](./08-ranking.md)
 - [ ] [09. ゲームロジック単体テスト](./09-logic-unit-tests.md)
 

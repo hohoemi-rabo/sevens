@@ -50,7 +50,7 @@ describe('initGame', () => {
       rng: seededRng(1),
     })
 
-    expect(game.board.d).toEqual({ low: 7, high: 7 })
+    expect(game.board.d).toEqual([7])
 
     const handCards = game.players.flatMap((p) => p.hand.map(cardId))
     expect(handCards).toHaveLength(51) // ♦7は場へ
@@ -92,7 +92,7 @@ describe('initGame', () => {
       rng: seededRng(2),
     })
     for (const suit of ['s', 'h', 'd', 'c'] as const) {
-      expect(game.board[suit]).toEqual({ low: 7, high: 7 })
+      expect(game.board[suit]).toEqual([7])
     }
     const handCards = game.players.flatMap((p) => p.hand.map(cardId))
     expect(handCards).toHaveLength(48) // 7が4枚場へ
@@ -117,7 +117,7 @@ describe('playCard', () => {
     const state = makeState([[c('d', 8), c('s', 2)], [c('h', 1)]])
     const next = playCard(state, 'p0', c('d', 8))
 
-    expect(next.board.d).toEqual({ low: 7, high: 8 })
+    expect(next.board.d).toEqual([7, 8])
     expect(next.players[0].hand.map(cardId)).toEqual(['s2'])
     expect(next.currentSeat).toBe(1)
   })
@@ -125,7 +125,7 @@ describe('playCard', () => {
   it('非破壊（元の状態を変えない）', () => {
     const state = makeState([[c('d', 8)], [c('h', 1)]])
     playCard(state, 'p0', c('d', 8))
-    expect(state.board.d).toEqual({ low: 7, high: 7 })
+    expect(state.board.d).toEqual([7])
     expect(state.players[0].hand).toHaveLength(1)
   })
 
@@ -167,11 +167,34 @@ describe('pass', () => {
     expect(next.currentSeat).toBe(1)
   })
 
-  it('残0でのパスは0で下げ止まる（脱落処理は07）', () => {
-    const state = makeState([[c('s', 2)], [c('h', 1)]], { maxPass: 1, currentSeat: 0 })
+  it('上限超過のパスで脱落: 手札を場に放出し、以降の手番から除外される', () => {
+    // p0 は ♦9,♦10（今は出せない）を持つ。maxPass=1 で2回目のパスで脱落。
+    const state = makeState([[c('d', 9), c('d', 10)], [c('h', 1)], [c('s', 2)]], {
+      maxPass: 1,
+      currentSeat: 0,
+    })
     const once = pass(state, 'p0') // 1→0
-    const twice = pass({ ...once, currentSeat: 0 }, 'p0') // 0→0
-    expect(twice.players[0].passesLeft).toBe(0)
+    expect(once.players[0].status).toBe('playing')
+
+    const out = pass({ ...once, currentSeat: 0 }, 'p0') // 超過 → 脱落
+    expect(out.players[0].status).toBe('eliminated')
+    expect(out.players[0].hand).toEqual([]) // 手札は空
+    expect(out.players[0].eliminatedOrder).toBe(1)
+    // 手札は場に放出されている（♦に9,10が隙間つきで配置）
+    expect(out.board.d).toEqual([7, 9, 10])
+    // 手番は脱落者をスキップして次の playing へ
+    expect(out.currentSeat).toBe(1)
+  })
+
+  it('全員が上がり/脱落で対局終了', () => {
+    // p0 は脱落、p1 は ♦6 を出して上がり → 全員終了
+    const state = makeState([[c('s', 2)], [c('d', 6)]], { maxPass: 1, currentSeat: 0 })
+    const s1 = pass(state, 'p0') // 1→0
+    const s2 = pass({ ...s1, currentSeat: 0 }, 'p0') // 脱落
+    expect(s2.players[0].status).toBe('eliminated')
+    const s3 = playCard({ ...s2, currentSeat: 1 }, 'p1', c('d', 6)) // p1上がり
+    expect(s3.players[1].status).toBe('finished')
+    expect(s3.phase).toBe('ended')
   })
 })
 

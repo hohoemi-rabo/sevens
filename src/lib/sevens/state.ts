@@ -10,10 +10,11 @@
  */
 import { createDeck, cardId, cardsEqual, SUITS, type Card } from './cards'
 import { shuffle, deal, type Rng } from './deal'
-import { initBoard, place, type BoardState, type StartMode } from './board'
+import { initBoard, place, placeForced, type BoardState, type StartMode } from './board'
 import { isPlayable } from './playable'
+import { willEliminateOnPass, isValidMaxPass } from './pass'
 
-/** プレイヤーの状態。脱落（eliminated）の付与は 07 で実装する。 */
+/** プレイヤーの状態。 */
 export type PlayerStatus = 'playing' | 'finished' | 'eliminated'
 
 export interface Player {
@@ -22,11 +23,13 @@ export interface Player {
   /** 席番号 0..n-1。手番はこの順で進む。 */
   seat: number
   hand: Card[]
-  /** 残りパス可能回数。0でパスすると脱落（脱落処理は 07）。 */
+  /** 残りパス可能回数。0でパスすると脱落（手札を場に放出）。 */
   passesLeft: number
   status: PlayerStatus
-  /** 上がり/脱落の確定順位（1始まり）。未確定なら undefined。 */
+  /** 上がりの確定順位（1始まり）。脱落者には付かない（08で最終順位を組み立てる）。 */
   rank?: number
+  /** 脱落の発生順（1始まり）。順位(rank)とは別枠（08で利用）。 */
+  eliminatedOrder?: number
 }
 
 export interface GameState {
@@ -79,6 +82,9 @@ function removeStartingSevens(
  */
 export function initGame(opts: InitGameOptions): GameState {
   const { players, maxPass, startMode, rng } = opts
+  if (!isValidMaxPass(maxPass)) {
+    throw new Error(`maxPass must be 1..5: ${maxPass}`)
+  }
   const playerCount = players.length
 
   const dealtRaw = deal(shuffle(createDeck(), rng), playerCount)
@@ -198,11 +204,16 @@ export function playCard(state: GameState, playerId: string, card: Card): GameSt
   return advanceTurn({ ...state, players, board })
 }
 
+/** 次に付与する脱落順（既に脱落した人数 + 1）。 */
+function nextEliminatedOrder(players: Player[]): number {
+  return players.filter((p) => p.eliminatedOrder !== undefined).length + 1
+}
+
 /**
- * パスする（イミュータブル）。残パス回数を1減らして手番を送る。
- *
- * 注: パス回数を超過したときの「手札を全て場に出して脱落」処理（rank付与含む）は
- * チケット07で本実装する。ここでは残回数の減算と手番送りまで。
+ * パスする（イミュータブル）。
+ * - 残パス回数が残っていれば1減らして手番を送る。
+ * - 上限を超過するパスなら脱落: 手札を全て場に放出し（placeForced）、
+ *   status を 'eliminated' にして手番から除外する（順位 rank は付けない＝08で別枠管理）。
  */
 export function pass(state: GameState, playerId: string): GameState {
   if (state.phase === 'ended') {
@@ -213,7 +224,17 @@ export function pass(state: GameState, playerId: string): GameState {
     throw new Error(`Not ${playerId}'s turn`)
   }
 
-  const passesLeft = Math.max(0, player.passesLeft - 1)
+  if (willEliminateOnPass(player)) {
+    const board = placeForced(state.board, player.hand)
+    const players = withPlayer(state.players, player.seat, {
+      hand: [],
+      status: 'eliminated',
+      eliminatedOrder: nextEliminatedOrder(state.players),
+    })
+    return advanceTurn({ ...state, players, board })
+  }
+
+  const passesLeft = player.passesLeft - 1
   const players = withPlayer(state.players, player.seat, { passesLeft })
   return advanceTurn({ ...state, players })
 }

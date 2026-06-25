@@ -66,10 +66,19 @@ describe('全員CPU（弱）で対局が最後まで進む', () => {
           : pass(state, player.id)
     }
 
+    // デッドロックせず、必ず終了する
     expect(state.phase).toBe('ended')
-    // 脱落処理は07なので、このシードでは全員が上がりきる
-    expect(state.players.every((p) => p.status === 'finished')).toBe(true)
-    // 1〜4位が一意に付与される
-    expect(state.players.map((p) => p.rank).sort()).toEqual([1, 2, 3, 4])
+    // 全員が上がり or 脱落（playing が残らない）
+    expect(
+      state.players.every(
+        (p) => p.status === 'finished' || p.status === 'eliminated',
+      ),
+    ).toBe(true)
+    // 上がった人の順位は 1..k で一意（脱落者は rank を持たない）
+    const ranks = state.players
+      .filter((p) => p.status === 'finished')
+      .map((p) => p.rank)
+      .sort((a, b) => (a ?? 0) - (b ?? 0))
+    expect(ranks).toEqual(ranks.map((_, i) => i + 1))
   })
 })

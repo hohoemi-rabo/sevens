@@ -2,16 +2,22 @@
  * 場（4スートの並び）の状態管理（純粋TS）。
  *
  * 各スートは7を起点に、8→9→…→K（上方向）と 6→5→…→A（下方向）の2方向へ伸びる。
- * 状態はスートごとの「上端ランク(high)／下端ランク(low)」で表現する。
+ * 状態はスートごとの「配置済みランクの配列（昇順）」で表現する。
+ *
+ * 配列（集合）にしている理由:
+ * - 脱落時に手札を強制的に場へ放出すると、連続しない札（隙間）が生じうるため、
+ *   連続範囲 {low, high} では表現できない。配置済みランクの集合なら隙間を保持できる。
+ * - JSON で往復できるよう Set ではなく配列を採用（state.ts の serializeState 用）。
+ *
  * すべて非破壊更新（新しい状態を返す）。
  */
 import { SUITS, type Card, type Suit, type Rank } from './cards'
 
-/** あるスートの並び。null = そのスートはまだ未着手（7も置かれていない）。 */
-export type SuitRun = { low: Rank; high: Rank } | null
+/** あるスートに配置済みのランク（昇順）。空配列 = 未着手。 */
+export type SuitPile = Rank[]
 
-/** 場全体の状態。スートごとの並びを持つ。 */
-export type BoardState = Record<Suit, SuitRun>
+/** 場全体の状態。スートごとの配置済みランク集合を持つ。 */
+export type BoardState = Record<Suit, SuitPile>
 
 /**
  * 開始方式。
@@ -25,29 +31,50 @@ const PIVOT: Rank = 7
 
 /** 指定方式で場を初期化する。 */
 export function initBoard(mode: StartMode): BoardState {
-  const board = { s: null, h: null, d: null, c: null } as BoardState
+  const board = { s: [], h: [], d: [], c: [] } as BoardState
   if (mode === 'diamond7') {
-    board.d = { low: PIVOT, high: PIVOT }
+    board.d = [PIVOT]
   } else {
     for (const suit of SUITS) {
-      board[suit] = { low: PIVOT, high: PIVOT }
+      board[suit] = [PIVOT]
     }
   }
   return board
 }
 
 /**
+ * 7を含む連続ブロックの上下端を返す（7未配置なら null）。
+ * 隙間の先にある孤立札（脱落で放出された札など）はこのブロックに含まれない＝
+ * 隙間が埋まるまで出せない（本来の7並べルール）。
+ */
+export function runAround7(pile: readonly Rank[]): { low: Rank; high: Rank } | null {
+  const set = new Set<number>(pile)
+  if (!set.has(PIVOT)) return null
+  let low = PIVOT
+  let high = PIVOT
+  while (low > 1 && set.has(low - 1)) low--
+  while (high < 13 && set.has(high + 1)) high++
+  return { low: low as Rank, high: high as Rank }
+}
+
+/**
  * カードが現在の場に出せるか判定する（理由は問わない真偽値）。
- * - 該当スート未着手(null): rank が7のときのみ可（起点）
- * - 着手済み: high+1（上方向）または low-1（下方向）のときのみ可
- * 範囲外（K超・A未満）は不可。
+ * - 既に配置済みなら不可
+ * - 7が未配置のスート: rank が7のときのみ可（起点）
+ * - 7が配置済み: 連続ブロックの low-1（下方向）か high+1（上方向）のみ可
+ *   （連続ブロックの最大性より、これらは必ず未配置）。範囲外（K超・A未満）は不可。
  */
 export function canPlace(board: BoardState, card: Card): boolean {
-  const run = board[card.suit]
-  if (run === null) {
-    return card.rank === PIVOT
-  }
-  return card.rank === run.high + 1 || card.rank === run.low - 1
+  const pile = board[card.suit]
+  if (pile.includes(card.rank)) return false
+  const run = runAround7(pile)
+  if (run === null) return card.rank === PIVOT
+  return card.rank === run.low - 1 || card.rank === run.high + 1
+}
+
+/** ランクを昇順を保って追加した新しい配列を返す（非破壊）。 */
+function addRank(pile: readonly Rank[], rank: Rank): Rank[] {
+  return [...pile, rank].sort((a, b) => a - b)
 }
 
 /**
@@ -58,12 +85,19 @@ export function place(board: BoardState, card: Card): BoardState {
   if (!canPlace(board, card)) {
     throw new Error(`Illegal placement: ${card.suit}${card.rank}`)
   }
-  const run = board[card.suit]
-  const next: SuitRun =
-    run === null
-      ? { low: PIVOT, high: PIVOT }
-      : card.rank === run.high + 1
-        ? { low: run.low, high: card.rank }
-        : { low: card.rank, high: run.high }
-  return { ...board, [card.suit]: next }
+  return { ...board, [card.suit]: addRank(board[card.suit], card.rank) }
+}
+
+/**
+ * 連続性を無視して複数札を一括で場に放出する（脱落時の手札放出用）。
+ * 既に配置済みのランクは無視する。非破壊。
+ */
+export function placeForced(board: BoardState, cards: readonly Card[]): BoardState {
+  const next: BoardState = { s: [...board.s], h: [...board.h], d: [...board.d], c: [...board.c] }
+  for (const card of cards) {
+    if (!next[card.suit].includes(card.rank)) {
+      next[card.suit] = addRank(next[card.suit], card.rank)
+    }
+  }
+  return next
 }
