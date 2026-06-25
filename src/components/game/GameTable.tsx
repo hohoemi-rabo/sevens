@@ -16,6 +16,7 @@ import {
   type GameState,
 } from '@/lib/sevens/state'
 import { isPlayable } from '@/lib/sevens/playable'
+import { computeStandings, standingLabel } from '@/lib/sevens/ranking'
 import { decideWeak } from '@/lib/sevens/cpu'
 import { cardId, type Card } from '@/lib/sevens/cards'
 import Board from './Board'
@@ -172,20 +173,22 @@ function Results({
   state: GameState
   onRestart: () => void
 }) {
-  const ordered = [...state.players].sort(
-    (a, b) => (a.rank ?? 99) - (b.rank ?? 99),
-  )
+  const standings = computeStandings(state)
   return (
     <div className="mt-auto flex flex-col items-center gap-4 rounded-2xl bg-green-900/60 p-6">
       <h2 className="text-2xl font-bold">対局終了</h2>
       <ol className="flex flex-col gap-2">
-        {ordered.map((p) => (
-          <li key={p.id} className="text-xl">
-            <span className="font-bold text-yellow-300">
-              {p.rank ? `${p.rank}位` : '—'}
+        {standings.map((s) => (
+          <li key={s.player.id} className="text-xl">
+            <span
+              className={`font-bold ${
+                s.outcome === 'eliminated' ? 'text-rose-300' : 'text-yellow-300'
+              }`}
+            >
+              {standingLabel(s)}
             </span>{' '}
-            {p.name}
-            {p.id === HUMAN_ID && '（あなた）'}
+            {s.player.name}
+            {s.player.id === HUMAN_ID && '（あなた）'}
           </li>
         ))}
       </ol>
