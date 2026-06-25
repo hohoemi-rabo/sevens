@@ -14,6 +14,8 @@ export interface HandCardsProps {
   board: BoardState
   selectedId: string | null
   onSelect: (card: CardType) => void
+  /** 自分の手番でないときは選択・ハイライトを無効化する。 */
+  disabled?: boolean
 }
 
 /** スート順→ランク昇順で手札を並べる（見やすさのため）。 */
@@ -29,6 +31,7 @@ export default function HandCards({
   board,
   selectedId,
   onSelect,
+  disabled = false,
 }: HandCardsProps) {
   const playableIds = new Set(playableCards(hand, board).map(cardId))
 
@@ -36,7 +39,7 @@ export default function HandCards({
     <div className="flex flex-wrap items-end justify-center gap-2">
       {sortHand(hand).map((card) => {
         const id = cardId(card)
-        const isPlayable = playableIds.has(id)
+        const isPlayable = !disabled && playableIds.has(id)
         return (
           <Card
             key={id}

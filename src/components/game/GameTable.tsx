@@ -3,12 +3,11 @@
 /**
  * 対局画面のコンテナ（唯一の状態保持＝Client Component の境界）。
  *
- * 03 のゲームロジック（純関数）を useState で保持し、出す/パスで状態遷移する。
- * 通信なし・ローカル単独。CPU未実装のため「ホットシート」: 常に現在の手番の
- * プレイヤーの手札を表示し、1人で全員分を操作して最後まで進められる
- *（06で席1〜3をCPUに置換予定）。状態は後段で Zustand store に載せ替える。
+ * 人間は席0（id 'you'）。席1〜3はCPU（弱）。03の純ロジックを useState で保持し、
+ * 出す/パスで状態遷移する。CPUの手番は useEffect で1〜2秒の演出後に自動進行する
+ *（REQUIREMENTS 3.4）。通信なし・ローカル単独。状態は後段で Zustand に載せ替える。
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   initGame,
   playCard,
@@ -17,19 +16,25 @@ import {
   type GameState,
 } from '@/lib/sevens/state'
 import { isPlayable } from '@/lib/sevens/playable'
+import { decideWeak } from '@/lib/sevens/cpu'
 import { cardId, type Card } from '@/lib/sevens/cards'
 import Board from './Board'
 import HandCards from './HandCards'
 import ActionButtons from './ActionButtons'
 import OpponentArea from './OpponentArea'
 
-// CPUキャラ名は仮置き（REQUIREMENTS 3.4）。06でCPU実装と紐づける。
+const HUMAN_ID = 'you'
+
+// 席0=人間、席1〜3=CPU（弱）。名前は REQUIREMENTS 3.4 のキャラ名を仮置き。
 const PLAYERS = [
-  { id: 'you', name: 'あなた' },
+  { id: HUMAN_ID, name: 'あなた' },
   { id: 'cpu1', name: 'りつこ' },
   { id: 'cpu2', name: 'ハジメ' },
   { id: 'cpu3', name: 'ミミ' },
 ]
+
+/** CPUの思考演出時間（ミリ秒）。 */
+const CPU_THINK_MS = 1200
 
 function newGame(): GameState {
   return initGame({ players: PLAYERS, maxPass: 3, startMode: 'diamond7' })
@@ -41,21 +46,49 @@ export default function GameTable() {
 
   const ended = state.phase === 'ended'
   const current = ended ? null : currentPlayer(state)
-  const canPlay = !!selected && !!current && isPlayable(selected, state.board)
+  const isHumanTurn = current?.id === HUMAN_ID
+  const human = state.players.find((p) => p.id === HUMAN_ID)!
+  const canPlay = isHumanTurn && !!selected && isPlayable(selected, state.board)
+
+  // CPUの手番を自動進行（思考待ち演出つき）。
+  useEffect(() => {
+    if (state.phase === 'ended') return
+    const cur = currentPlayer(state)
+    if (cur.id === HUMAN_ID) return
+
+    const cpuId = cur.id
+    const timer = setTimeout(() => {
+      setState((prev) => {
+        if (prev.phase === 'ended') return prev
+        const p = currentPlayer(prev)
+        if (p.id !== cpuId) return prev // 既に進んでいたら何もしない
+        const action = decideWeak(prev, cpuId)
+        try {
+          return action.type === 'play'
+            ? playCard(prev, cpuId, action.card)
+            : pass(prev, cpuId)
+        } catch {
+          return pass(prev, cpuId)
+        }
+      })
+    }, CPU_THINK_MS)
+
+    return () => clearTimeout(timer)
+  }, [state])
 
   function handlePlay() {
-    if (!selected || !current) return
+    if (!canPlay || !selected) return
     try {
-      setState(playCard(state, current.id, selected))
+      setState(playCard(state, HUMAN_ID, selected))
       setSelected(null)
     } catch {
-      // 不正手（手番違い・出せない札）は無視。お助けの警告は15で実装。
+      // 不正手は無視（お助けの警告は15で実装）。
     }
   }
 
   function handlePass() {
-    if (!current) return
-    setState(pass(state, current.id))
+    if (!isHumanTurn) return
+    setState(pass(state, HUMAN_ID))
     setSelected(null)
   }
 
@@ -64,9 +97,7 @@ export default function GameTable() {
     setSelected(null)
   }
 
-  const opponents = current
-    ? state.players.filter((p) => p.seat !== current.seat)
-    : state.players
+  const opponents = state.players.filter((p) => p.id !== HUMAN_ID)
 
   return (
     <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-4 bg-green-800 p-4 text-white">
@@ -79,26 +110,42 @@ export default function GameTable() {
       {ended ? (
         <Results state={state} onRestart={handleRestart} />
       ) : (
-        current && (
-          <div className="mt-auto flex flex-col items-center gap-4 rounded-2xl bg-green-900/40 p-4">
-            <div className="text-xl">
-              現在の手番:{' '}
-              <span className="font-bold text-yellow-300">{current.name}</span>
-              さん（残りパス {current.passesLeft}回）
-            </div>
-            <HandCards
-              hand={current.hand}
-              board={state.board}
-              selectedId={selected ? cardId(selected) : null}
-              onSelect={setSelected}
-            />
+        <div className="mt-auto flex flex-col items-center gap-4 rounded-2xl bg-green-900/40 p-4">
+          <div className="text-xl">
+            {isHumanTurn ? (
+              <>
+                あなたの番です（残りパス{' '}
+                <span className="font-bold text-yellow-300">
+                  {human.passesLeft}
+                </span>
+                回）
+              </>
+            ) : (
+              <>
+                <span className="font-bold text-yellow-300">
+                  {current?.name}
+                </span>
+                さんが考え中…
+              </>
+            )}
+          </div>
+
+          <HandCards
+            hand={human.hand}
+            board={state.board}
+            selectedId={selected ? cardId(selected) : null}
+            onSelect={setSelected}
+            disabled={!isHumanTurn || human.status !== 'playing'}
+          />
+
+          {isHumanTurn && human.status === 'playing' && (
             <ActionButtons
               canPlay={canPlay}
               onPlay={handlePlay}
               onPass={handlePass}
             />
-          </div>
-        )
+          )}
+        </div>
       )}
     </div>
   )
@@ -124,6 +171,7 @@ function Results({
               {p.rank ? `${p.rank}位` : '—'}
             </span>{' '}
             {p.name}
+            {p.id === HUMAN_ID && '（あなた）'}
           </li>
         ))}
       </ol>

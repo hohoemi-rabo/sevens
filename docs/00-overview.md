@@ -15,7 +15,7 @@
 - [x] [03. ゲーム状態・ターン進行](./03-game-state.md)
 - [x] [04. トランプSVG素材の生成](./04-card-svg-assets.md)
 - [x] [05. 対局UIの叩き台](./05-game-ui-skeleton.md)
-- [ ] [06. CPU1人と対戦できる状態](./06-cpu-basic.md)
+- [x] [06. CPU1人と対戦できる状態](./06-cpu-basic.md)
 
 ### フェーズ2：ルール完成
 - [ ] [07. パス回数・脱落管理](./07-pass-elimination.md)
