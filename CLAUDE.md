@@ -26,21 +26,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## コマンド
 
 ```bash
-npm run dev     # 開発サーバー（Turbopack使用、http://localhost:3000）
-npm run build   # 本番ビルド（Turbopack使用）
-npm run start   # ビルド済みアプリの起動
-npm run lint    # ESLint（next/core-web-vitals + next/typescript）
+npm run dev            # 開発サーバー（Turbopack使用、http://localhost:3000）
+npm run build          # 本番ビルド（Turbopack使用）
+npm run start          # ビルド済みアプリの起動
+npm run lint           # ESLint（next/core-web-vitals + next/typescript）
+npm run test           # Vitest（watch）
+npm run test:run       # Vitest（1回実行・CI/検証用）
+npm run cards:generate # トランプSVG 53枚を public/cards/ に再生成
 ```
 
-テストフレームワークは未導入。`REQUIREMENTS.md` フェーズ2でゲームルールの単体テストを追加予定。
+**テストは Vitest を導入済み**（node 環境・`vitest.config.ts`、`@/*` エイリアス対応）。ゲームロジック層には各ファイル隣接の `*.test.ts` で振る舞いベースのテストを置く方針。シャッフルは `seededRng`（`deal.ts`）でシード固定し決定論的にテストする。
 
 ## 技術スタック
 
 - **Next.js 15 (App Router) + React 19 + TypeScript** — Turbopack有効
 - **Tailwind CSS v3.4**（v4ではなく意図的にv3。`tailwind.config.ts` + `postcss.config.mjs`）
+- **Vitest**（テスト・導入済み）
 - **Zustand**（状態管理・未導入）、**Socket.io**（通信・未導入）
 - パスエイリアス: `@/*` → `./src/*`
-- 現状は `create-next-app` のボイラープレートのみ（`src/app/` に layout/page/globals.css）
+
+### 現在のディレクトリ構成（実装済み）
+- `src/lib/sevens/` — ゲームロジック層（純粋TS）: `cards.ts` / `deal.ts` / `board.ts` / `playable.ts` / `pass.ts` / `state.ts` / `ranking.ts` と `cpu/`（`types.ts` / `weak.ts` / `index.ts`）。各ファイルに `*.test.ts`
+- `src/components/game/` — 対局UI: `GameTable.tsx`（唯一の `"use client"`・状態保持）/ `Board.tsx` / `HandCards.tsx` / `ActionButtons.tsx` / `OpponentArea.tsx` / `Card.tsx`
+- `src/app/` — `layout.tsx`（`lang="ja"`・metadata）/ `page.tsx`（Server Component → `GameTable` へ委譲）/ `globals.css`
+- `public/cards/` — トランプSVG 53枚（`scripts/generate-cards.mjs` で生成）
+- 未着手: `src/lib/adapter/`（通信層）/ `src/lib/store/`（Zustand）/ `server.ts`
 
 ## アーキテクチャ（実装方針）
 
@@ -57,10 +67,17 @@ Socket.ioを使うため、Next.jsと同居するカスタムサーバー `serve
 ## ゲームルールの要点（実装時の注意）
 
 - トランプ52枚（ジョーカーなし）を4人で均等配分（各13枚）。CPUで4人を埋める
-- ♦7からスタート、7を起点に各スート両方向（8→K / 6→A）へ伸ばす
+- ♦7からスタート、7を起点に各スート両方向（8→K / 6→A）へ伸ばす。開始方式は `diamond7`（♦7のみ）/ `all7`（各スートの7）を `StartMode` で切替（`board.ts`）
 - **パス回数はホストが部屋作成時に設定（1〜5回）**。超過したら手札を全て場に出して**脱落**
 - 順位は1〜4位＋脱落を明示。全員が上がるか脱落するまで継続
-- **お助けモード**（デフォルトON、トグル切替）: 出せる札ハイライト、出せる札があるのにパスする際の警告ダイアログ、残りパス回数強調、ターン通知
+- **お助けモード**（デフォルトON、トグル切替）: 出せる札ハイライト、出せる札があるのにパスする際の警告ダイアログ、残りパス回数強調、ターン通知（判定は `pass.ts` の `isWastefulPass` 等で公開済み）
+
+### 実装上の確定済み設計判断（変更時は影響を確認）
+- **盤面モデル**: `BoardState = Record<Suit, Rank[]>`（配置済みランクの**配列**・昇順・JSON安全）。脱落者の手札を本来ルール通り場に放出すると**隙間（飛んだ札）**が生じるため、`{low,high}` 連続範囲ではなく集合で保持する。出せる札の判定は `runAround7()`（7を含む連続ブロックの端のみ）。一括放出は `placeForced()`
+- **脱落**: パス上限超過で `placeForced` により手札を場へ放出し `status:'eliminated'`、`eliminatedOrder` を記録（順位 `rank` とは別枠）。手番送り（`advanceTurn`）は `status==='playing'` 以外を自動スキップ
+- **順位**: `ranking.ts` の `computeStandings()` が派生（状態は変更しない）。上がり→`rank` 昇順、脱落→`eliminatedOrder` 降順（後に脱落＝長く生存が上）。脱落者は数字を付けず「脱落」表示
+- **ハイドレーション**: 配札は `Math.random` を使うため SSR と不一致になる。`GameTable` は**クライアントのマウント後に `initGame`** し、SSR中は決定的なプレースホルダを描画する（`useState(null)` + `useEffect`）
+- **状態は純粋データ**（関数・クラスを持たない）。`serializeState`/`deserializeState`（JSON）で往復でき、再接続復元・通信同期に使える
 
 ## Next.js App Router ベストプラクティス（15.5系）
 
@@ -112,5 +129,5 @@ context7 で取得した公式ドキュメント（Next.js 15.x App Router）に
 
 ## アセット
 
-- トランプカードは**SVGで自作**し `public/cards/` に配置（命名: `s1〜s13`=スペードA〜K, `h*`=ハート, `d*`=ダイヤ, `c*`=クラブ, `back.svg`=裏面）
-- 音声・効果音は `public/audio/`、mp3を事前ロード。読み上げ（「ダイヤの8！」等）・拍手音・シャッフル音など「ワイワイ感」が中心機能
+- トランプカードは**SVGで自作**し `public/cards/` に配置済み（命名: `s1〜s13`=スペードA〜K, `h*`=ハート, `d*`=ダイヤ, `c*`=クラブ, `back.svg`=裏面）。`cardId`（`cards.ts`、例 `d7`）とファイル名が一致。生成は `scripts/generate-cards.mjs`（`npm run cards:generate`）— 手書きせずスクリプトを編集して再生成する
+- 音声・効果音は `public/audio/`（未着手）、mp3を事前ロード。読み上げ（「ダイヤの8！」等）・拍手音・シャッフル音など「ワイワイ感」が中心機能
