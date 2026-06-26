@@ -17,6 +17,8 @@ import { computeStandings, standingLabel } from "@/lib/sevens/ranking";
 import { cardId, type Card } from "@/lib/sevens/cards";
 import { useGameConnection } from "@/lib/store/useGameConnection";
 import { useGameStore } from "@/lib/store/gameStore";
+import { useAudioEffects } from "@/lib/audio/useAudioEffects";
+import { AudioControls } from "@/components/audio";
 import { Button, Heading, ScreenContainer } from "@/components/ui";
 import Board from "./Board";
 import HandCards from "./HandCards";
@@ -36,6 +38,7 @@ function Centered({ children }: { children: React.ReactNode }) {
 export function GameBoard({ roomId }: { roomId: string }) {
   const router = useRouter();
   useGameConnection(); // 接続維持（タイトル→対局のクライアント遷移で切らない）
+  useAudioEffects(); // ゲームイベントを効果音・読み上げにひも付け（#14）
   const gameState = useGameStore((s) => s.gameState);
   const mySeat = useGameStore((s) => s.mySeat);
   const connection = useGameStore((s) => s.connection);
@@ -106,7 +109,10 @@ export function GameBoard({ roomId }: { roomId: string }) {
           </p>
         )}
 
-        <h1 className="text-center text-2xl font-bold">7並べ</h1>
+        <div className="flex items-center justify-between gap-4">
+          <h1 className="text-2xl font-bold">7並べ</h1>
+          <AudioControls />
+        </div>
 
         <OpponentArea players={opponents} currentSeat={gameState.currentSeat} />
 

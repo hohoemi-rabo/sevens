@@ -31,9 +31,31 @@ export const SUIT_LABEL: Record<Suit, string> = {
   c: 'クラブ',
 }
 
+/** 読み上げ用のランク日本語名（例:「ダイヤのキング！」）。A/J/Q/K は呼称、2〜10は数字。 */
+export const RANK_LABEL: Record<Rank, string> = {
+  1: 'エース',
+  2: '2',
+  3: '3',
+  4: '4',
+  5: '5',
+  6: '6',
+  7: '7',
+  8: '8',
+  9: '9',
+  10: '10',
+  11: 'ジャック',
+  12: 'クイーン',
+  13: 'キング',
+}
+
 /** 赤スート（♥♦）か。UIのコントラスト表現で再利用する想定。 */
 export function isRedSuit(suit: Suit): boolean {
   return suit === 'h' || suit === 'd'
+}
+
+/** カードの読み上げ文字列（例 `{suit:'d', rank:8}` → 「ダイヤの8！」）。音声合成に渡す。 */
+export function cardSpeech(card: Card): string {
+  return `${SUIT_LABEL[card.suit]}の${RANK_LABEL[card.rank]}！`
 }
 
 /** カード → ID文字列（例 `{suit:'d', rank:7}` → `"d7"`）。 */

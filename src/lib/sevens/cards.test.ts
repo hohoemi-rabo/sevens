@@ -4,6 +4,7 @@ import {
   cardId,
   parseCardId,
   cardsEqual,
+  cardSpeech,
   isRedSuit,
   SUITS,
   RANKS,
@@ -66,6 +67,19 @@ describe('isRedSuit', () => {
     expect(isRedSuit('d')).toBe(true)
     expect(isRedSuit('s')).toBe(false)
     expect(isRedSuit('c')).toBe(false)
+  })
+})
+
+describe('cardSpeech', () => {
+  it('数字ランクはそのまま読む（例「ダイヤの8！」）', () => {
+    expect(cardSpeech({ suit: 'd', rank: 8 })).toBe('ダイヤの8！')
+  })
+
+  it('A/J/Q/K は呼称で読む', () => {
+    expect(cardSpeech({ suit: 's', rank: 1 })).toBe('スペードのエース！')
+    expect(cardSpeech({ suit: 'h', rank: 11 })).toBe('ハートのジャック！')
+    expect(cardSpeech({ suit: 'c', rank: 12 })).toBe('クラブのクイーン！')
+    expect(cardSpeech({ suit: 'd', rank: 13 })).toBe('ダイヤのキング！')
   })
 })
 
