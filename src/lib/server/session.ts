@@ -6,14 +6,8 @@
 // 麻雀（流用元）との違い: アクションは play/pass の2種だけ。reducer/validate/settle/claims や
 // CPU への rng 注入が無く、seat→playerId の解決層と「例外→エラー翻訳」が中核になる。
 
-import {
-  type GameState,
-  currentPlayer,
-  initGame,
-  pass,
-  playCard,
-} from "@/lib/sevens/state";
-import { type Rng, seededRng } from "@/lib/sevens/deal";
+import { type GameState, initGame, pass, playCard } from "@/lib/sevens/state";
+import { seededRng } from "@/lib/sevens/deal";
 import { isValidMaxPass } from "@/lib/sevens/pass";
 import { type StartMode } from "@/lib/sevens/board";
 import { type Action, decideWeak } from "@/lib/sevens/cpu";

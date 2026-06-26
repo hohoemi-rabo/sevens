@@ -10,10 +10,10 @@ export default defineConfig({
     include: ['src/**/*.test.ts'],
     coverage: {
       provider: 'v8',
-      // ゲームロジック層（純粋TS）を計測対象にする。
-      include: ['src/lib/sevens/**/*.ts'],
+      // ゲームロジック層（純粋TS）＋通信層（adapter / server セッションコア）を計測対象にする。
+      include: ['src/lib/sevens/**/*.ts', 'src/lib/adapter/**/*.ts', 'src/lib/server/**/*.ts'],
       // テスト・型のみファイル（実行コードを持たない）は除外。
-      exclude: ['**/*.test.ts', 'src/lib/sevens/cpu/types.ts'],
+      exclude: ['**/*.test.ts', 'src/lib/sevens/cpu/types.ts', 'src/lib/adapter/types.ts'],
       reporter: ['text', 'html'],
     },
   },

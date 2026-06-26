@@ -21,6 +21,15 @@ const eslintConfig = [
       "next-env.d.ts",
     ],
   },
+  {
+    // 先頭 _ の引数/変数は「意図的に未使用」とみなす（インターフェース実装のスタブ等）。
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
+      ],
+    },
+  },
 ];
 
 export default eslintConfig;
