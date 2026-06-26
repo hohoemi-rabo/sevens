@@ -74,6 +74,32 @@ function wireServer(io: IOServer, store: RoomStore): void {
     };
     socket.on("player:play", ({ card }: { card: never }) => onAction({ type: "play", card }));
     socket.on("player:pass", () => onAction({ type: "pass" }));
+
+    // 再接続（#13）: トークンで席を再束縛し、現状態を再送する。
+    socket.on(
+      "room:reconnect",
+      (
+        { roomId, seat, token }: { roomId: string; seat: number; token: string },
+        ack?: (res: unknown) => void,
+      ) => {
+        const res = store.reconnect(roomId, seat, token, socket.id);
+        if (!res.ok) return ack?.(res.error);
+        data.roomId = roomId;
+        data.seat = seat;
+        socket.join(roomId);
+        ack?.({ ok: true });
+        io.to(roomId).emit("room:players", store.getPlayers(roomId));
+        broadcast(roomId);
+      },
+    );
+
+    socket.on("disconnect", () => {
+      const loc = store.markDisconnected(socket.id);
+      if (loc) {
+        io.to(loc.roomId).emit("room:players", store.getPlayers(loc.roomId));
+        driveAndBroadcast(loc.roomId);
+      }
+    });
   });
 }
 
@@ -91,12 +117,14 @@ describe("in-process Socket.io 同期", () => {
   let httpServer: HttpServer;
   let io: IOServer;
   let url: string;
+  let store: RoomStore;
   const adapters: LocalAdapter[] = [];
 
   beforeEach(async () => {
     httpServer = createServer();
     io = new IOServer(httpServer);
-    wireServer(io, new RoomStore());
+    store = new RoomStore();
+    wireServer(io, store);
     await new Promise<void>((resolve) => httpServer.listen(0, resolve));
     url = `http://localhost:${(httpServer.address() as AddressInfo).port}`;
   });
@@ -174,5 +202,47 @@ describe("in-process Socket.io 同期", () => {
     await until(() => lastError !== null || serializeState(last.a!) !== before);
     expect(lastError).toBe("ILLEGAL_ACTION");
     expect(serializeState(last.a!)).toBe(before); // 状態は不変
+  });
+
+  it("切断→トークン再接続で権威状態が復元され、同じ席に戻る", async () => {
+    // A(席0,ホスト)＋B(席1)＋CPU2。B が接続を保つので A 切断でも対局は終局しない。
+    const a = await connect();
+    const b = await connect();
+    let bLast: GameState | null = null;
+    b.onState((s) => (bLast = s));
+
+    const ca = await a.createRoom("Aさん");
+    await b.joinRoom(ca.passcode!, "Bさん");
+    await a.start({ seed: 7, maxPass: 3, startMode: "diamond7", fillWithCpu: true });
+    await until(() => !!bLast);
+
+    // A が切断（サーバーは席0を !connected にし、CPU 代行で B の手番まで進める）。
+    a.disconnect();
+    await until(() => store.getPlayers(ca.roomId).some((p) => p.seat === 0 && !p.connected));
+
+    // 新しい端末（A2）がトークンで再接続。現在の権威状態を受信する。
+    const a2 = await connect();
+    let a2Last: GameState | null = null;
+    a2.onState((s) => (a2Last = s));
+    await a2.reconnect(ca.roomId, ca.seat, ca.token);
+
+    // A2 の受信状態がサーバーの権威状態（＝B が見ている状態）と一致する。
+    await until(() => !!a2Last && serializeState(a2Last) === serializeState(store.getState(ca.roomId)!));
+    expect(serializeState(a2Last!)).toBe(serializeState(store.getState(ca.roomId)!));
+    expect(serializeState(a2Last!)).toBe(serializeState(bLast!));
+    // 席0（A）に戻っている＝CPU 名ではなく "Aさん"。
+    expect(a2Last!.players.find((p) => p.seat === 0)!.name).toBe("Aさん");
+    expect(store.getPlayers(ca.roomId).find((p) => p.seat === 0)!.connected).toBe(true);
+  });
+
+  it("誤ったトークンの再接続は拒否される", async () => {
+    const a = await connect();
+    const ca = await a.createRoom("Aさん");
+    await a.start({ seed: 7, fillWithCpu: true });
+
+    const a2 = await connect();
+    await expect(a2.reconnect(ca.roomId, ca.seat, "wrong-token")).rejects.toMatchObject({
+      code: "ROOM_NOT_FOUND",
+    });
   });
 });
