@@ -36,6 +36,7 @@ function makeMockAdapter() {
     state?: (s: GameState) => void;
     end?: (s: GameState) => void;
     error?: (e: AdapterError) => void;
+    dissolved?: () => void;
   } = {};
   const adapter: SevensAdapter = {
     connect: vi.fn(async () => {}),
@@ -46,6 +47,8 @@ function makeMockAdapter() {
     joinRoom: vi.fn(async (): Promise<SeatAssignment> => ({ roomId: "r1", seat: 1, token: "t1" })),
     reconnect: vi.fn(async () => {}),
     start: vi.fn(async () => {}),
+    rematch: vi.fn(async () => {}),
+    dissolve: vi.fn(async () => {}),
     send: vi.fn(),
     onConnectionChange: (cb) => {
       cbs.conn = cb;
@@ -65,6 +68,10 @@ function makeMockAdapter() {
     },
     onError: (cb) => {
       cbs.error = cb;
+      return () => {};
+    },
+    onDissolved: (cb) => {
+      cbs.dissolved = cb;
       return () => {};
     },
   };
@@ -127,6 +134,23 @@ describe("gameStore", () => {
     expect(s.mySeat).toBeNull();
     expect(s.connection).toBe("disconnected");
     expect(adapter.disconnect).toHaveBeenCalled();
+  });
+
+  it("rematch / dissolve は adapter の対応メソッドを呼ぶ（#17）", async () => {
+    const { adapter } = makeMockAdapter();
+    await useGameStore.getState().connect(adapter);
+    await useGameStore.getState().rematch();
+    await useGameStore.getState().dissolve();
+    expect(adapter.rematch).toHaveBeenCalled();
+    expect(adapter.dissolve).toHaveBeenCalled();
+  });
+
+  it("onDissolved 受信で dissolved フラグが立つ（#17）", async () => {
+    const { adapter, cbs } = makeMockAdapter();
+    await useGameStore.getState().connect(adapter);
+    expect(useGameStore.getState().dissolved).toBe(false);
+    cbs.dissolved!();
+    expect(useGameStore.getState().dissolved).toBe(true);
   });
 });
 

@@ -30,11 +30,17 @@ export interface GameStore {
   players: readonly PlayerInfo[];
   gameState: GameState | null;
   lastError: AdapterError | null;
+  /** ホストが部屋を解散したとき true（#17）。UI はトップへ戻す。 */
+  dissolved: boolean;
 
   connect(adapter: SevensAdapter): Promise<void>;
   createRoom(name: string): Promise<void>;
   joinRoom(passcode: Passcode, name: string): Promise<void>;
   start(opts?: StartOptions): Promise<void>;
+  /** 同じ部屋・同設定で再戦（ホスト限定・#17）。 */
+  rematch(): Promise<void>;
+  /** 部屋を解散（ホスト限定・#17）。 */
+  dissolve(): Promise<void>;
   send(action: PlayerAction): void;
   /** sessionStorage の保存済みセッションを state に復元する（リロード後の再接続用・#13）。 */
   restoreSession(): boolean;
@@ -51,6 +57,7 @@ const INITIAL = {
   players: [] as readonly PlayerInfo[],
   gameState: null,
   lastError: null,
+  dissolved: false,
 };
 
 // adapter は描画に関係しないのでクロージャ変数に保持（state に入れて再描画を誘発しない）。
@@ -91,6 +98,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
       adapter.onState((gameState) => set({ gameState })),
       adapter.onEnd((gameState) => set({ gameState })),
       adapter.onError((lastError) => set({ lastError })),
+      // ホストの解散通知: セッションを捨て、UI をトップへ戻すためのフラグを立てる（#17）。
+      adapter.onDissolved(() => {
+        clearSession();
+        set({ dissolved: true });
+      }),
     );
     await adapter.connect();
   },
@@ -118,6 +130,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
   async start(opts) {
     try {
       await requireAdapter().start(opts);
+    } catch (e) {
+      set({ lastError: e as AdapterError });
+    }
+  },
+
+  async rematch() {
+    try {
+      await requireAdapter().rematch();
+    } catch (e) {
+      set({ lastError: e as AdapterError });
+    }
+  },
+
+  async dissolve() {
+    try {
+      await requireAdapter().dissolve();
     } catch (e) {
       set({ lastError: e as AdapterError });
     }

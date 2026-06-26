@@ -62,6 +62,29 @@ function wireServer(io: IOServer, store: RoomStore): void {
       driveAndBroadcast(data.roomId);
     });
 
+    // もう一回（ホスト限定・終局後）。#17
+    socket.on("game:rematch", (_p: unknown, ack?: (res: unknown) => void) => {
+      if (data.roomId === undefined || data.seat !== 0) {
+        return ack?.({ code: "NOT_HOST", message: "ホストのみ操作できます" });
+      }
+      const res = store.rematch(data.roomId);
+      if (!res.ok) return ack?.(res.error);
+      ack?.({ ok: true });
+      io.to(data.roomId).emit("room:players", store.getPlayers(data.roomId));
+      broadcast(data.roomId);
+      driveAndBroadcast(data.roomId);
+    });
+
+    // 部屋を解散（ホスト限定）。#17
+    socket.on("room:dissolve", (_p: unknown, ack?: (res: unknown) => void) => {
+      if (data.roomId === undefined || data.seat !== 0) {
+        return ack?.({ code: "NOT_HOST", message: "ホストのみ操作できます" });
+      }
+      ack?.({ ok: true });
+      io.to(data.roomId).emit("room:dissolved");
+      store.removeRoom(data.roomId);
+    });
+
     const onAction = (action: Parameters<RoomStore["applyPlayerAction"]>[2]) => {
       if (data.roomId === undefined || data.seat === undefined) return;
       const res = store.applyPlayerAction(data.roomId, data.seat, action);
@@ -233,6 +256,60 @@ describe("in-process Socket.io 同期", () => {
     // 席0（A）に戻っている＝CPU 名ではなく "Aさん"。
     expect(a2Last!.players.find((p) => p.seat === 0)!.name).toBe("Aさん");
     expect(store.getPlayers(ca.roomId).find((p) => p.seat === 0)!.connected).toBe(true);
+  });
+
+  it("ホストの『もう一回』で全クライアントが新しい対局状態を受信する（#17）", async () => {
+    const a = await connect();
+    const b = await connect();
+    const last: { a: GameState | null; b: GameState | null } = { a: null, b: null };
+    a.onState((s) => (last.a = s));
+    b.onState((s) => (last.b = s));
+
+    const ca = await a.createRoom("Aさん");
+    await b.joinRoom(ca.passcode!, "Bさん");
+    await a.start({ seed: 7, maxPass: 3, startMode: "diamond7" });
+    await until(() => !!last.a && !!last.b);
+
+    // 人間（席0=A / 席1=B）が合法手を出し続けて終局させる（auto席は server が進める）。
+    while (last.a!.phase !== "ended") {
+      const seat = currentPlayer(last.a!).seat;
+      const actor = seat === 0 ? a : seat === 1 ? b : null;
+      if (!actor) {
+        await until(() => last.a!.phase === "ended" || [0, 1].includes(currentPlayer(last.a!).seat));
+        continue;
+      }
+      const before = serializeState(last.a!);
+      actor.send(decideWeak(last.a!, `p${seat}`));
+      await until(() => serializeState(last.a!) !== before);
+    }
+    expect(last.a!.phase).toBe("ended");
+
+    // ホストが「もう一回」→ 全員が新しい playing 状態を受信し、両者一致。
+    await a.rematch();
+    await until(
+      () => last.a!.phase === "playing" && last.b!.phase === "playing" &&
+        serializeState(last.a!) === serializeState(last.b!),
+    );
+    expect(last.a!.players.every((p) => p.status === "playing")).toBe(true);
+    expect(serializeState(last.a!)).toBe(serializeState(last.b!));
+  });
+
+  it("ホストの『部屋を解散』で全クライアントに onDissolved が届く（#17）", async () => {
+    const a = await connect();
+    const b = await connect();
+    let aDissolved = false;
+    let bDissolved = false;
+    a.onDissolved(() => (aDissolved = true));
+    b.onDissolved(() => (bDissolved = true));
+
+    const ca = await a.createRoom("Aさん");
+    await b.joinRoom(ca.passcode!, "Bさん");
+    await a.start({ seed: 7 });
+
+    await a.dissolve();
+    await until(() => aDissolved && bDissolved);
+    expect(aDissolved && bDissolved).toBe(true);
+    expect(store.getState(ca.roomId)).toBeNull(); // 部屋は破棄済み
   });
 
   it("誤ったトークンの再接続は拒否される", async () => {

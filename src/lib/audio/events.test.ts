@@ -126,6 +126,26 @@ describe('diffGameState — 脱落', () => {
   })
 })
 
+describe('diffGameState — 再戦（#17）', () => {
+  it('終局 → 配り直し直後 の遷移で deal を返す（rematch のシャッフル音）', () => {
+    const ended = state({
+      phase: 'ended',
+      players: [
+        player({ id: 'p0', seat: 0, hand: [], status: 'finished', rank: 1 }),
+        player({ id: 'p1', seat: 1, hand: [], status: 'finished', rank: 2 }),
+      ],
+    })
+    // 配り直し直後（diamond7・場=♦7のみ・手札+場=52・全員 playing）
+    const hands = fullHands()
+    hands[0] = hands[0].slice(1)
+    const fresh = state({
+      board: initBoard('diamond7'),
+      players: [0, 1, 2, 3].map((seat) => player({ id: `p${seat}`, seat, hand: hands[seat] })),
+    })
+    expect(diffGameState(ended, fresh)).toEqual([{ kind: 'deal' }])
+  })
+})
+
 describe('diffGameState — 終局', () => {
   it('phase が playing→ended で end を含む', () => {
     const prev = state({

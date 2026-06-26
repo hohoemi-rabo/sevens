@@ -14,13 +14,19 @@
 - シニア配慮：大きく分かりやすい順位表示
 - 終了後の選択：「もう一回」（同じ部屋で再戦）／「部屋を解散」
 
+## 実装メモ（確定）
+- 結果画面は `src/components/game/ResultScreen.tsx`（GameBoard インラインの暫定 Results を置換）。`computeStandings`/`standingLabel`＋`Avatar` で 1〜4位（金銀銅メダル）＋脱落＋「あなた」を大きく表示。
+- 「もう一回」「部屋を解散」は**ホスト限定**（非ホストは待機＋「退出する」）。プロトコルを #17 で追加: `game:rematch`/`room:dissolve`（server.ts）、`RoomStore.rematch`（`dealInto` 抽出・同席/同設定/新seed で再配札）、`SevensAdapter.rematch/dissolve/onDissolved`、`gameStore.rematch/dissolve/dissolved`。
+- 解散は `room:dissolved` を全員配信→各クライアントが `dissolved` を見てトップへ。
+- 拍手・終了音は #14 既存（finish→applause、end→end.mp3）。再戦の配り直しでもシャッフルが鳴るよう `diffGameState` に ended→fresh deal ルールを追加。
+
 ## Todo
-- [ ] 結果データ（08）を受け取り順位・脱落を一覧表示
-- [ ] 拍手音・演出（14と連動）
-- [ ] 「もう一回」：状態をリセットして再戦
-- [ ] 「部屋を解散」：部屋を閉じてトップへ
-- [ ] シニア向けに大きく明瞭な表示
+- [x] 結果データ（08）を受け取り順位・脱落を一覧表示
+- [x] 拍手音・演出（14と連動）
+- [x] 「もう一回」：状態をリセットして再戦（ホスト・同設定）
+- [x] 「部屋を解散」：部屋を閉じてトップへ（全員）
+- [x] シニア向けに大きく明瞭な表示
 
 ## 完了条件
-- 対局終了で順位・脱落が正しく表示される
-- もう一回／解散が機能する
+- [x] 対局終了で順位・脱落が正しく表示される
+- [x] もう一回／解散が機能する（session/sync テストで機械保証）

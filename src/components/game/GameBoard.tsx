@@ -11,9 +11,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { currentPlayer, type GameState } from "@/lib/sevens/state";
+import { currentPlayer } from "@/lib/sevens/state";
 import { isPlayable, hasPlayable } from "@/lib/sevens/playable";
-import { computeStandings, standingLabel } from "@/lib/sevens/ranking";
 import { cardId, type Card } from "@/lib/sevens/cards";
 import type { PlayerInfo } from "@/lib/adapter/types";
 import { useGameConnection } from "@/lib/store/useGameConnection";
@@ -30,6 +29,7 @@ import HandCards from "./HandCards";
 import ActionButtons from "./ActionButtons";
 import OpponentArea from "./OpponentArea";
 import Avatar from "./Avatar";
+import ResultScreen from "./ResultScreen";
 import { GameMenu } from "./GameMenu";
 
 function Centered({ children }: { children: React.ReactNode }) {
@@ -50,6 +50,7 @@ export function GameBoard({ roomId }: { roomId: string }) {
   const mySeat = useGameStore((s) => s.mySeat);
   const connection = useGameStore((s) => s.connection);
   const players = useGameStore((s) => s.players); // PlayerInfo[]（CPU/接続状態）
+  const dissolved = useGameStore((s) => s.dissolved);
   const send = useGameStore((s) => s.send);
   const helpMode = useHelpStore((s) => s.helpMode);
   const confirmBeforePlay = useUiSettingsStore((s) => s.confirmBeforePlay);
@@ -74,6 +75,22 @@ export function GameBoard({ roomId }: { roomId: string }) {
     useGameStore.getState().disconnect();
     router.push("/");
   };
+
+  // ホストが解散したら全員トップへ戻す（#17・onDissolved → dissolved）。
+  useEffect(() => {
+    if (dissolved) backToTitle();
+    // backToTitle は毎レンダー再生成だが dissolved の立ち上がりでのみ実行したい。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dissolved]);
+
+  // 再戦（#17）で盤面に戻ったら選択・一時停止をリセット（終局時の選択を持ち越さない）。
+  const phase = gameState?.phase;
+  useEffect(() => {
+    if (phase === "playing") {
+      setSelected(null);
+      setPaused(false);
+    }
+  }, [phase]);
 
   // 直接アクセス（保存セッションも無い）／再接続失敗で部屋情報が無い。
   if (!gameState && mySeat === null) {
@@ -108,6 +125,7 @@ export function GameBoard({ roomId }: { roomId: string }) {
   const ended = gameState.phase === "ended";
   const current = ended ? null : currentPlayer(gameState);
   const canPlay = isMyTurn && !!selected && isPlayable(selected, gameState.board);
+  const isHost = infoBySeat(mySeat)?.isHost ?? mySeat === 0; // ホスト席は 0（hostSeat）
 
   const doPlay = () => {
     if (!selected) return;
@@ -174,7 +192,14 @@ export function GameBoard({ roomId }: { roomId: string }) {
         <Board board={gameState.board} />
 
         {ended ? (
-          <Results state={gameState} mySeat={mySeat} onBack={backToTitle} />
+          <ResultScreen
+            state={gameState}
+            mySeat={mySeat}
+            isHost={isHost}
+            onRematch={() => useGameStore.getState().rematch()}
+            onDissolve={() => useGameStore.getState().dissolve()}
+            onLeave={backToTitle}
+          />
         ) : (
           <div className="mt-auto flex flex-col items-center gap-4 rounded-2xl bg-green-900/40 p-4">
             {paused && isMyTurn ? (
@@ -241,40 +266,5 @@ export function GameBoard({ roomId }: { roomId: string }) {
         {selected && <CardView card={selected} size="lg" />}
       </ConfirmDialog>
     </ScreenContainer>
-  );
-}
-
-function Results({
-  state,
-  mySeat,
-  onBack,
-}: {
-  state: GameState;
-  mySeat: number;
-  onBack: () => void;
-}) {
-  const standings = computeStandings(state);
-  return (
-    <div className="mt-auto flex flex-col items-center gap-4 rounded-2xl bg-green-900/60 p-6">
-      <h2 className="text-2xl font-bold">対局終了</h2>
-      <ol className="flex flex-col gap-2">
-        {standings.map((s) => (
-          <li key={s.player.id} className="text-xl">
-            <span
-              className={`font-bold ${
-                s.outcome === "eliminated" ? "text-rose-300" : "text-yellow-300"
-              }`}
-            >
-              {standingLabel(s)}
-            </span>{" "}
-            {s.player.name}
-            {s.player.seat === mySeat && "（あなた）"}
-          </li>
-        ))}
-      </ol>
-      <Button variant="primary" size="lg" onClick={onBack}>
-        トップへ戻る
-      </Button>
-    </div>
   );
 }

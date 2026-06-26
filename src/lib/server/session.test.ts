@@ -227,6 +227,64 @@ describe("RoomStore: ヘッドレス1局", () => {
   });
 });
 
+describe("RoomStore: rematch（#17 もう一回）", () => {
+  /** 終局まで進める（人間席は decideWeak で機械応答）。 */
+  const playToEnd = (store: RoomStore, roomId: string) => {
+    let guard = 0;
+    while (store.getState(roomId)!.phase !== "ended" && guard++ < 2000) {
+      store.advanceAuto(roomId);
+      const st = store.getState(roomId)!;
+      if (st.phase === "ended") break;
+      store.applyPlayerAction(roomId, st.currentSeat, decideWeak(st, `p${st.currentSeat}`));
+    }
+  };
+
+  it("終局後に再戦すると全員 playing・手札が再配分され、カード保存則が成り立つ", () => {
+    const store = new RoomStore();
+    const { roomId } = created(store);
+    store.startGame(roomId, { seed: 1, maxPass: 4, startMode: "all7", cpuStrength: "medium" });
+    playToEnd(store, roomId);
+
+    const res = store.rematch(roomId);
+    expect(res.ok).toBe(true);
+    const st = store.getState(roomId)!;
+    expect(st.phase).toBe("playing");
+    expect(st.players.every((p) => p.status === "playing")).toBe(true);
+    expect(totalCards(st)).toBe(52);
+    expect(new Set(allCardIds(st)).size).toBe(52);
+    // 設定（maxPass/startMode）は引き継ぐ。
+    expect(st.maxPass).toBe(4);
+    expect(st.startMode).toBe("all7");
+  });
+
+  it("席編成（名前・CPU）は再戦でも保持される", () => {
+    const store = new RoomStore();
+    const { roomId } = created(store, "せんせい");
+    store.startGame(roomId, { seed: 2 });
+    playToEnd(store, roomId);
+    const before = store.getPlayers(roomId);
+    store.rematch(roomId);
+    expect(store.getPlayers(roomId)).toEqual(before);
+  });
+
+  it("未開始・未終局では GAME_NOT_STARTED で拒否する", () => {
+    const store = new RoomStore();
+    const { roomId } = created(store);
+    expect(store.rematch(roomId).ok).toBe(false); // 未開始
+    store.startGame(roomId, { seed: 1 });
+    const mid = store.rematch(roomId); // 進行中
+    expect(mid.ok).toBe(false);
+    if (!mid.ok) expect(mid.error.code).toBe("GAME_NOT_STARTED");
+  });
+
+  it("存在しない部屋は ROOM_NOT_FOUND", () => {
+    const store = new RoomStore();
+    const res = store.rematch("nope");
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.code).toBe("ROOM_NOT_FOUND");
+  });
+});
+
 describe("RoomStore: stepAuto", () => {
   it("接続中の人間の手番では停止する（acted:false）", () => {
     const store = new RoomStore();

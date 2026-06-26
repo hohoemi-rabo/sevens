@@ -4,7 +4,7 @@
 // ペイロードはすべて JSONシリアライズ可能（GameState はプレーンデータ）。
 //
 // 7並べはアクションが play/pass の2種だけなので、麻雀（流用元）の多彩なアクションより大幅に
-// シンプル。rematch/dissolve/onDissolved は後続チケット（#11/#17）で追加する。
+// シンプル。rematch/dissolve/onDissolved は #17（もう一回・解散）で追加済み。
 
 import type { Action, CpuStrength } from "@/lib/sevens/cpu/types";
 import type { GameState } from "@/lib/sevens/state";
@@ -75,6 +75,10 @@ export interface SevensAdapter {
   /** 通信断後の再接続で席を再束縛する（トークンで本人確認・#13）。 */
   reconnect(roomId: RoomId, seat: Seat, token: ClientToken): Promise<void>;
   start(opts?: StartOptions): Promise<void>;
+  /** 同じ部屋・同設定で再戦する（ホスト限定・終局後・#17）。 */
+  rematch(): Promise<void>;
+  /** 部屋を解散する（ホスト限定・#17）。全員に onDissolved が届く。 */
+  dissolve(): Promise<void>;
 
   /** カードを出す/パスのプレイヤーアクション。エラーは onError 経由（fire-and-forget）。 */
   send(action: PlayerAction): void;
@@ -84,4 +88,6 @@ export interface SevensAdapter {
   onEnd(cb: (state: GameState) => void): Unsubscribe;
   onError(cb: (err: AdapterError) => void): Unsubscribe;
   onConnectionChange(cb: (status: ConnectionStatus) => void): Unsubscribe;
+  /** 部屋が解散されたとき（ホストの dissolve）に全員へ通知（#17）。 */
+  onDissolved(cb: () => void): Unsubscribe;
 }

@@ -175,6 +175,42 @@ app.prepare().then(() => {
       driveAutoTimed(data.roomId);
     });
 
+    // もう一回（ホスト限定・終局後）: 同じ部屋/席/設定で配り直して再開（#17）。
+    socket.on("game:rematch", (_payload: unknown, ack?: (res: unknown) => void) => {
+      if (data.roomId === undefined) {
+        ack?.({ code: "ROOM_NOT_FOUND", message: "部屋がありません" });
+        return;
+      }
+      if (data.seat !== 0) {
+        ack?.({ code: "NOT_HOST", message: "ホストのみ操作できます" });
+        return;
+      }
+      const res = store.rematch(data.roomId);
+      if (!res.ok) {
+        ack?.(res.error);
+        return;
+      }
+      ack?.({ ok: true });
+      io.to(data.roomId).emit("room:players", store.getPlayers(data.roomId));
+      broadcast(data.roomId);
+      driveAutoTimed(data.roomId);
+    });
+
+    // 部屋を解散（ホスト限定）: 全員へ通知してから部屋を破棄（#17）。
+    socket.on("room:dissolve", (_payload: unknown, ack?: (res: unknown) => void) => {
+      if (data.roomId === undefined) {
+        ack?.({ code: "ROOM_NOT_FOUND", message: "部屋がありません" });
+        return;
+      }
+      if (data.seat !== 0) {
+        ack?.({ code: "NOT_HOST", message: "ホストのみ操作できます" });
+        return;
+      }
+      ack?.({ ok: true });
+      io.to(data.roomId).emit("room:dissolved");
+      store.removeRoom(data.roomId);
+    });
+
     // プレイヤーアクション（席はサーバー束縛を使う＝自己申告を信用しない）。
     socket.on("player:play", ({ card }: { card: Card }) => applyAndBroadcast({ type: "play", card }));
     socket.on("player:pass", () => applyAndBroadcast({ type: "pass" }));

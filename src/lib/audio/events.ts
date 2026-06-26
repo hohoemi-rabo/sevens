@@ -73,6 +73,11 @@ export function diffGameState(prev: GameState | null, next: GameState): AudioEve
     return isFreshDeal(next) ? [{ kind: 'deal' }] : []
   }
 
+  // 再戦（#17）: 終局 → 配り直し直後 への遷移もシャッフル音を鳴らす。
+  if (prev.phase === 'ended' && isFreshDeal(next)) {
+    return [{ kind: 'deal' }]
+  }
+
   const events: AudioEvent[] = []
 
   // 脱落（placeForced で場が大量に変わるため、出札判定より先に判定する）。

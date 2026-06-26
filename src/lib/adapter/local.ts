@@ -97,6 +97,24 @@ export class LocalAdapter implements SevensAdapter {
     });
   }
 
+  rematch(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.s.emit("game:rematch", {}, (res: { ok: true } | AdapterError) => {
+        if ("ok" in res) resolve();
+        else reject(res);
+      });
+    });
+  }
+
+  dissolve(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.s.emit("room:dissolve", {}, (res: { ok: true } | AdapterError) => {
+        if ("ok" in res) resolve();
+        else reject(res);
+      });
+    });
+  }
+
   send(action: PlayerAction): void {
     if (action.type === "play") this.s.emit("player:play", { card: action.card });
     else this.s.emit("player:pass", {});
@@ -138,5 +156,11 @@ export class LocalAdapter implements SevensAdapter {
       this.socket.off("disconnect", onDisconnect);
       this.socket.off("connect_error", onErr);
     };
+  }
+
+  onDissolved(cb: () => void): Unsubscribe {
+    const h = () => cb();
+    this.s.on("room:dissolved", h);
+    return () => this.socket.off("room:dissolved", h);
   }
 }
