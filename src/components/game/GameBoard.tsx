@@ -12,13 +12,15 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { currentPlayer, type GameState } from "@/lib/sevens/state";
-import { isPlayable } from "@/lib/sevens/playable";
+import { isPlayable, hasPlayable } from "@/lib/sevens/playable";
 import { computeStandings, standingLabel } from "@/lib/sevens/ranking";
 import { cardId, type Card } from "@/lib/sevens/cards";
 import { useGameConnection } from "@/lib/store/useGameConnection";
 import { useGameStore } from "@/lib/store/gameStore";
+import { useHelpStore } from "@/lib/store/helpStore";
 import { useAudioEffects } from "@/lib/audio/useAudioEffects";
 import { AudioControls } from "@/components/audio";
+import { HelpToggle, PassWarningDialog, TurnBanner } from "@/components/help";
 import { Button, Heading, ScreenContainer } from "@/components/ui";
 import Board from "./Board";
 import HandCards from "./HandCards";
@@ -43,7 +45,9 @@ export function GameBoard({ roomId }: { roomId: string }) {
   const mySeat = useGameStore((s) => s.mySeat);
   const connection = useGameStore((s) => s.connection);
   const send = useGameStore((s) => s.send);
+  const helpMode = useHelpStore((s) => s.helpMode);
   const [selected, setSelected] = useState<Card | null>(null);
+  const [passWarnOpen, setPassWarnOpen] = useState(false);
 
   const backToTitle = () => {
     useGameStore.getState().disconnect();
@@ -91,10 +95,20 @@ export function GameBoard({ roomId }: { roomId: string }) {
     setSelected(null);
   };
 
-  const handlePass = () => {
-    if (!isMyTurn) return;
+  const doPass = () => {
     send({ type: "pass" });
     setSelected(null);
+    setPassWarnOpen(false);
+  };
+
+  const handlePass = () => {
+    if (!isMyTurn) return;
+    // お助けON で出せる札があるのにパスしようとしたら確認（#15・REQUIREMENTS 3.3）。
+    if (helpMode && hasPlayable(human.hand, gameState.board)) {
+      setPassWarnOpen(true);
+      return;
+    }
+    doPass();
   };
 
   return (
@@ -109,9 +123,12 @@ export function GameBoard({ roomId }: { roomId: string }) {
           </p>
         )}
 
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-2xl font-bold">7並べ</h1>
-          <AudioControls />
+          <div className="flex flex-wrap items-center gap-3">
+            <HelpToggle />
+            <AudioControls />
+          </div>
         </div>
 
         <OpponentArea players={opponents} currentSeat={gameState.currentSeat} />
@@ -122,20 +139,12 @@ export function GameBoard({ roomId }: { roomId: string }) {
           <Results state={gameState} mySeat={mySeat} onBack={backToTitle} />
         ) : (
           <div className="mt-auto flex flex-col items-center gap-4 rounded-2xl bg-green-900/40 p-4">
-            <div className="text-xl">
-              {isMyTurn ? (
-                <>
-                  あなたの番です（残りパス{" "}
-                  <span className="font-bold text-yellow-300">{human.passesLeft}</span>
-                  回）
-                </>
-              ) : (
-                <>
-                  <span className="font-bold text-yellow-300">{current?.name}</span>
-                  さんが考え中…
-                </>
-              )}
-            </div>
+            <TurnBanner
+              isMyTurn={isMyTurn}
+              helpMode={helpMode}
+              currentName={current?.name}
+              passesLeft={human.passesLeft}
+            />
 
             <HandCards
               hand={human.hand}
@@ -143,6 +152,7 @@ export function GameBoard({ roomId }: { roomId: string }) {
               selectedId={selected ? cardId(selected) : null}
               onSelect={setSelected}
               disabled={!isMyTurn || human.status !== "playing"}
+              helpMode={helpMode}
             />
 
             {isMyTurn && human.status === "playing" && (
@@ -151,6 +161,12 @@ export function GameBoard({ roomId }: { roomId: string }) {
           </div>
         )}
       </div>
+
+      <PassWarningDialog
+        open={passWarnOpen}
+        onConfirm={doPass}
+        onCancel={() => setPassWarnOpen(false)}
+      />
     </ScreenContainer>
   );
 }

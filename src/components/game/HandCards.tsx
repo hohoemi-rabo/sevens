@@ -16,6 +16,13 @@ export interface HandCardsProps {
   onSelect: (card: CardType) => void
   /** 自分の手番でないときは選択・ハイライトを無効化する。 */
   disabled?: boolean
+  /**
+   * お助けモード（デフォルト ON）。
+   * ON: 出せる札をハイライト＋出せない札をグレーアウトし、出せる札のみクリック可。
+   * OFF: 見た目の差を出さず（最低限の補助）、手番中は全札を選択可にする
+   *      （不正手は「出す」ボタンの活性条件で弾く）。
+   */
+  helpMode?: boolean
 }
 
 /** スート順→ランク昇順で手札を並べる（見やすさのため）。 */
@@ -32,6 +39,7 @@ export default function HandCards({
   selectedId,
   onSelect,
   disabled = false,
+  helpMode = true,
 }: HandCardsProps) {
   const playableIds = new Set(playableCards(hand, board).map(cardId))
 
@@ -40,15 +48,18 @@ export default function HandCards({
       {sortHand(hand).map((card) => {
         const id = cardId(card)
         const isPlayable = !disabled && playableIds.has(id)
+        // お助けON: 出せる札のみクリック可＋ハイライト/グレーアウト。
+        // お助けOFF: 手番中は全札クリック可、見た目の強調はしない。
+        const clickable = helpMode ? isPlayable : !disabled
         return (
           <Card
             key={id}
             card={card}
             size="lg"
-            highlighted={isPlayable && selectedId !== id}
+            highlighted={helpMode && isPlayable && selectedId !== id}
             selected={selectedId === id}
-            dimmed={!isPlayable}
-            onClick={isPlayable ? () => onSelect(card) : undefined}
+            dimmed={helpMode && !isPlayable}
+            onClick={clickable ? () => onSelect(card) : undefined}
           />
         )
       })}
