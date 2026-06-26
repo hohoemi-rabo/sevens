@@ -26,21 +26,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **進捗（最新の正は `docs/00-overview.md`）**:
 - ✅ フェーズ1（01〜06）: ゲームロジック土台＋ローカル単独でCPU対戦が動く
 - ✅ フェーズ2（07〜09）: ルール完成（パス/脱落・順位）＋ロジック層の単体テスト整備
-- ▶ 次はフェーズ3（10〜13）: 通信層(Socket.io/LocalAdapter/server.ts)・部屋管理・CPU難易度(弱/中/強)・再接続
+- ✅ チケット10: 通信層（`server.ts`＋`src/lib/adapter/`＋`src/lib/server/session.ts`＋`src/lib/store/`）。サーバー権威の RoomStore・LocalAdapter・Zustand ストアを実装し、in-process 結合テストで複数クライアント同期を機械保証。**UI 統合（GameTable のストア接続・部屋UI）はチケット11**へ
+- ▶ 次はフェーズ3の残り（11〜13）: 部屋管理（合言葉/QR/席割りUI）・CPU難易度(弱/中/強)・再接続
 - 1チケット完了ごとにコンベンショナルコミット。各チケットの実装方針・確定事項はコミット履歴と本ファイル下部「確定済み設計判断」を参照
 
 ## コマンド
 
 ```bash
-npm run dev            # 開発サーバー（Turbopack使用、http://localhost:3000）
-npm run build          # 本番ビルド（Turbopack使用）
-npm run start          # ビルド済みアプリの起動
+npm run dev            # カスタムサーバー起動（tsx watch server.ts、Next dev は内部で Turbopack）http://localhost:3000
+npm run build          # 本番ビルド（next build --turbopack）
+npm run start          # 本番起動（NODE_ENV=production tsx server.ts。next start は使わない）
 npm run lint           # ESLint（next/core-web-vitals + next/typescript）
 npm run test           # Vitest（watch）
 npm run test:run       # Vitest（1回実行・CI/検証用）
-npm run test:coverage  # Vitest + カバレッジ（@vitest/coverage-v8、src/lib/sevens/** 対象）
+npm run test:coverage  # Vitest + カバレッジ（@vitest/coverage-v8、src/lib/{sevens,adapter,server}/** 対象）
 npm run cards:generate # トランプSVG 53枚を public/cards/ に再生成
 ```
+
+**カスタムサーバー（チケット10〜）**: Socket.io と Next.js を同居させるため `server.ts`（`tsx` 実行）が起点。`dev` は `tsx watch server.ts`（server.ts 編集時はプロセス再起動＝全 socket 切断、再接続は#13）。ページの HMR は `next({dev,turbopack:dev})` が従来どおり提供。LAN 公開のため `host=0.0.0.0`（`HOST`/`PORT`/`CPU_DELAY_MS` env で上書き可）。`next.config.ts` の `allowedDevOrigins` で他端末からの dev アクセスを許可。
 
 **テストは Vitest を導入済み**（node 環境・`vitest.config.ts`、`@/*` エイリアス対応）。ゲームロジック層には各ファイル隣接の `*.test.ts` で振る舞いベースのテストを置く方針。シャッフルは `seededRng`（`deal.ts`）でシード固定し決定論的にテストする。
 
@@ -49,7 +52,7 @@ npm run cards:generate # トランプSVG 53枚を public/cards/ に再生成
 - **Next.js 15 (App Router) + React 19 + TypeScript** — Turbopack有効
 - **Tailwind CSS v3.4**（v4ではなく意図的にv3。`tailwind.config.ts` + `postcss.config.mjs`）
 - **Vitest**（テスト・導入済み）
-- **Zustand**（状態管理・未導入）、**Socket.io**（通信・未導入）
+- **Zustand**（状態管理・導入済み, `src/lib/store/`）、**Socket.io**（通信・導入済み, server/client）、**tsx**（カスタムサーバー実行）
 - パスエイリアス: `@/*` → `./src/*`
 
 ### 現在のディレクトリ構成（実装済み）
@@ -57,7 +60,11 @@ npm run cards:generate # トランプSVG 53枚を public/cards/ に再生成
 - `src/components/game/` — 対局UI: `GameTable.tsx`（唯一の `"use client"`・状態保持）/ `Board.tsx` / `HandCards.tsx` / `ActionButtons.tsx` / `OpponentArea.tsx` / `Card.tsx`
 - `src/app/` — `layout.tsx`（`lang="ja"`・metadata）/ `page.tsx`（Server Component → `GameTable` へ委譲）/ `globals.css`
 - `public/cards/` — トランプSVG 53枚（`scripts/generate-cards.mjs` で生成）
-- 未着手: `src/lib/adapter/`（通信層）/ `src/lib/store/`（Zustand）/ `server.ts`
+- `server.ts`（ルート） — Next.js + Socket.io 同居のカスタムサーバー。RoomStore を権威に socket イベントを捌くグルー（ルールは持たない）
+- `src/lib/adapter/` — 通信層: `types.ts`（`SevensAdapter` 契約）/ `local.ts`（`LocalAdapter`・Socket.io）/ `remote.ts`（将来スタブ）/ `connect.ts`（`ensureConnected`）。`local.test.ts` / `sync.test.ts`（in-process 結合）
+- `src/lib/server/` — `session.ts`（`RoomStore`＝サーバー権威の部屋・席・状態管理）と `session.test.ts`
+- `src/lib/store/` — Zustand: `gameStore.ts`（サーバー同期ストア）/ `useGameConnection.ts`（接続フック）。`gameStore.test.ts`
+- 未着手（UI 統合）: GameTable のストア接続・部屋UI（合言葉/QR/席割り）はチケット11
 
 ## アーキテクチャ（実装方針）
 
@@ -65,11 +72,26 @@ npm run cards:generate # トランプSVG 53枚を public/cards/ に再生成
 
 1. **UI層**（Next.js / React, `src/app`・`src/components`）
 2. **ゲームロジック層**（純粋TS, `src/lib/sevens/`）— 通信に一切依存しない純関数群。配札・場の管理・出せる札判定・パス/脱落管理・順位判定・CPU思考（弱/中/強の3段階を別ファイルで実装）
-3. **通信層**（差し替え可能, `src/lib/adapter/`）— `LocalAdapter`（Socket.io 同一LAN, 麻雀から流用）を実装。将来 `RemoteAdapter` を追加できる抽象を維持
+3. **通信層**（差し替え可能, `src/lib/adapter/`）— `LocalAdapter`（Socket.io 同一LAN, 麻雀から流用）を実装済み。将来 `RemoteAdapter` を追加できる抽象（`SevensAdapter` 契約）を維持
 
-**この分離を崩さないこと**: ゲームロジックは通信・UIをimportしない。これにより単体テストとアダプタ差し替えが可能になる。
+**この分離を崩さないこと**: ゲームロジック（`src/lib/sevens/**`）は通信・UIをimportしない（片方向依存）。これにより単体テストとアダプタ差し替えが可能になる。通信層→ロジックの import のみ許可。
 
-Socket.ioを使うため、Next.jsと同居するカスタムサーバー `server.ts` を導入予定（イベント例: `room:create`, `game:state`, `player:play`, `player:pass`, `player:eliminated` 等）。
+### 通信プロトコル（確定・チケット10で実装）
+サーバー（`server.ts` + `RoomStore`）がゲーム状態の**権威**。クライアントは操作を送り `game:state` を受けて描画する（楽観適用しない）。Socket.io イベント:
+
+| イベント | 実装 | 方向 | ペイロード |
+|---|---|---|---|
+| `room:create` / `room:join` | ack 付き emit | C→S | req `{name}` / `{passcode,name}`、ack `SeatAssignment`\|`AdapterError` |
+| `room:reconnect` | ack 付き emit（#13） | C→S | req `{roomId,seat,token}` |
+| `room:players` | broadcast | S→C | `PlayerInfo[]` |
+| `game:start` | ack 付き emit（host限定） | C→S | req `{opts?: {seed,maxPass,startMode,fillWithCpu}}` |
+| `game:state` | broadcast（唯一の同期経路） | S→C | `GameState` |
+| `player:play` / `player:pass` | fire-and-forget（エラーは `app:error`） | C→S | `{card}` / `{}` |
+| `player:finish` / `player:eliminated` | broadcast（状態 diff から導出・演出用） | S→C | `{seat,rank}` / `{seat,eliminatedOrder}` |
+| `game:end` | broadcast（`phase==='ended'` 時） | S→C | `GameState` |
+| `app:error` | emit（"error" 予約回避） | S→C | `AdapterError` |
+
+席はサーバー束縛（`socket.data.seat`）を使い、自己申告 seat は信用しない。`player:play` のペイロードは card のみ。
 
 ## ゲームルールの要点（実装時の注意）
 
@@ -85,6 +107,8 @@ Socket.ioを使うため、Next.jsと同居するカスタムサーバー `serve
 - **順位**: `ranking.ts` の `computeStandings()` が派生（状態は変更しない）。上がり→`rank` 昇順、脱落→`eliminatedOrder` 降順（後に脱落＝長く生存が上）。脱落者は数字を付けず「脱落」表示
 - **ハイドレーション**: 配札は `Math.random` を使うため SSR と不一致になる。`GameTable` は**クライアントのマウント後に `initGame`** し、SSR中は決定的なプレースホルダを描画する（`useState(null)` + `useEffect`）
 - **状態は純粋データ**（関数・クラスを持たない）。`serializeState`/`deserializeState`（JSON）で往復でき、再接続復元・通信同期に使える
+- **通信層（チケット10）**: サーバー権威。`RoomStore`（`src/lib/server/session.ts`）が部屋・席・`GameState` をメモリ保持（DB無し）。**席↔playerId 解決**は `SeatSlot.playerId`（席固定 `p0..p3`）で行い、`startGame` が席順に `initGame({players})` を組むので `state.players[i].seat===i` かつ `id===p{i}` が成立。**不正手の扱い**は `playCard/pass` の throw を `applyPlayerAction` が try/catch して `ILLEGAL_ACTION` に翻訳（麻雀の事前 `validate` の代替）。**CPU/切断者の自動進行**は `stepAuto`（rng不要・`decideWeak`）を `server.ts` の `driveAutoTimed` が遅延チェインで回す。CPU難易度の差し替え点は `stepAuto` 内の `decideWeak`（#12 で `strategyFor()` 化）
+- **アダプタ契約**: `SevensAdapter`（`src/lib/adapter/types.ts`）。`PlayerAction = Action`（play/pass のみ）。`StartOptions` に `maxPass`/`startMode` を持つ。`rematch`/`dissolve`/`onDissolved` は後続チケット（#11/#17）で追加予定
 
 ## Next.js App Router ベストプラクティス（15.5系）
 
