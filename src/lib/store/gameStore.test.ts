@@ -2,8 +2,9 @@
 // サーバー権威の同期ストアとして、購読イベントが state に反映されること、
 // 部屋情報が createRoom/joinRoom で入ること、disconnect で初期化されることを見る。
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useGameStore } from "@/lib/store/gameStore";
+import { loadSession, saveSession } from "@/lib/store/session-storage";
 import type {
   AdapterError,
   ConnectionStatus,
@@ -12,6 +13,20 @@ import type {
   SevensAdapter,
 } from "@/lib/adapter/types";
 import type { GameState } from "@/lib/sevens/state";
+
+class MemoryStorage {
+  private map = new Map<string, string>();
+  getItem(k: string) {
+    return this.map.has(k) ? this.map.get(k)! : null;
+  }
+  setItem(k: string, v: string) {
+    this.map.set(k, v);
+  }
+  removeItem(k: string) {
+    this.map.delete(k);
+  }
+}
+const flush = () => new Promise((r) => setTimeout(r, 0));
 
 /** イベントを手動発火できるモック adapter。 */
 function makeMockAdapter() {
@@ -112,5 +127,67 @@ describe("gameStore", () => {
     expect(s.mySeat).toBeNull();
     expect(s.connection).toBe("disconnected");
     expect(adapter.disconnect).toHaveBeenCalled();
+  });
+});
+
+describe("gameStore: 再接続セッション（#13）", () => {
+  const g = globalThis as { sessionStorage?: Storage };
+
+  beforeEach(() => {
+    g.sessionStorage = new MemoryStorage() as unknown as Storage;
+    useGameStore.getState().disconnect();
+  });
+  afterEach(() => {
+    delete g.sessionStorage;
+  });
+
+  it("createRoom はセッションを sessionStorage に保存する", async () => {
+    const { adapter } = makeMockAdapter();
+    await useGameStore.getState().connect(adapter);
+    await useGameStore.getState().createRoom("ホスト");
+    expect(loadSession()).toEqual({ roomId: "r1", seat: 0, token: "t0" });
+  });
+
+  it("restoreSession で保存済みセッションを state に復元する", () => {
+    saveSession({ roomId: "r9", seat: 2, token: "tk" });
+    expect(useGameStore.getState().restoreSession()).toBe(true);
+    expect(useGameStore.getState()).toMatchObject({ roomId: "r9", mySeat: 2, myToken: "tk" });
+  });
+
+  it("保存が無ければ restoreSession は false で state を変えない", () => {
+    expect(useGameStore.getState().restoreSession()).toBe(false);
+    expect(useGameStore.getState().roomId).toBeNull();
+  });
+
+  it("connected 復帰時、入室済みなら adapter.reconnect が呼ばれる", async () => {
+    const { adapter, cbs } = makeMockAdapter();
+    await useGameStore.getState().connect(adapter);
+    await useGameStore.getState().createRoom("ホスト"); // roomId/seat/token をセット
+    cbs.conn!("connected");
+    expect(adapter.reconnect).toHaveBeenCalledWith("r1", 0, "t0");
+  });
+
+  it("reconnect 失敗でセッションを破棄し ids をリセットする", async () => {
+    const { adapter, cbs } = makeMockAdapter();
+    adapter.reconnect = vi.fn(async () => {
+      throw { code: "ROOM_NOT_FOUND", message: "部屋が見つかりません" } as AdapterError;
+    });
+    await useGameStore.getState().connect(adapter);
+    saveSession({ roomId: "rX", seat: 1, token: "tX" });
+    useGameStore.getState().restoreSession();
+    cbs.conn!("connected");
+    await flush();
+    expect(useGameStore.getState().roomId).toBeNull();
+    expect(useGameStore.getState().mySeat).toBeNull();
+    expect(loadSession()).toBeNull();
+  });
+
+  it("disconnect はセッションを破棄する", async () => {
+    const { adapter } = makeMockAdapter();
+    await useGameStore.getState().connect(adapter);
+    await useGameStore.getState().createRoom("ホスト");
+    expect(loadSession()).not.toBeNull();
+    useGameStore.getState().disconnect();
+    expect(loadSession()).toBeNull();
   });
 });

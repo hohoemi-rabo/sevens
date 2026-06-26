@@ -7,6 +7,7 @@
 
 import { create } from "zustand";
 import type { GameState } from "@/lib/sevens/state";
+import { clearSession, loadSession, saveSession } from "@/lib/store/session-storage";
 import type {
   AdapterError,
   ClientToken,
@@ -35,6 +36,8 @@ export interface GameStore {
   joinRoom(passcode: Passcode, name: string): Promise<void>;
   start(opts?: StartOptions): Promise<void>;
   send(action: PlayerAction): void;
+  /** sessionStorage の保存済みセッションを state に復元する（リロード後の再接続用・#13）。 */
+  restoreSession(): boolean;
   disconnect(): void;
   clearError(): void;
 }
@@ -75,7 +78,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
         if (connection === "connected") {
           const { roomId, mySeat, myToken } = get();
           if (roomId && mySeat !== null && myToken) {
-            void adapter.reconnect(roomId, mySeat, myToken).catch(() => {});
+            void adapter.reconnect(roomId, mySeat, myToken).catch(() => {
+              // 部屋が消えている/サーバー再起動など＝復元不可。セッションを捨てて
+              // 「部屋が見つかりません」へ落とす（無限「準備中…」を防ぐ）。
+              clearSession();
+              set({ roomId: null, mySeat: null, myToken: null });
+            });
           }
         }
       }),
@@ -91,6 +99,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     try {
       const a = await requireAdapter().createRoom(name);
       set({ roomId: a.roomId, mySeat: a.seat, myToken: a.token, passcode: a.passcode ?? null });
+      saveSession({ roomId: a.roomId, seat: a.seat, token: a.token });
     } catch (e) {
       set({ lastError: e as AdapterError });
     }
@@ -100,6 +109,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     try {
       const a = await requireAdapter().joinRoom(passcode, name);
       set({ roomId: a.roomId, mySeat: a.seat, myToken: a.token });
+      saveSession({ roomId: a.roomId, seat: a.seat, token: a.token });
     } catch (e) {
       set({ lastError: e as AdapterError });
     }
@@ -117,11 +127,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
     requireAdapter().send(action);
   },
 
+  restoreSession() {
+    const saved = loadSession();
+    if (!saved) return false;
+    set({ roomId: saved.roomId, mySeat: saved.seat, myToken: saved.token });
+    return true;
+  },
+
   disconnect() {
     unsubscribers.forEach((u) => u());
     unsubscribers = [];
     adapterRef?.disconnect();
     adapterRef = null;
+    clearSession();
     set({ ...INITIAL });
   },
 
