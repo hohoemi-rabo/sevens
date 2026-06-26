@@ -32,7 +32,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - ✅ チケット13: 切断・再接続。サーバー側シーム（#10）に加え、入室セッション（`roomId/seat/token`）を sessionStorage 永続化＋リロード時に再水和して自動再接続。切断中はバナー表示。**フェーズ3完了**
 - ✅ チケット14: 音声・効果音。読み上げ＝Web Speech API（録音不要・動的）、効果音＝`public/audio/` の mp3（固定名・未配置でも無音フォールバック）。`game:state` の前後差分（`diffGameState`）でイベント検出し `useAudioEffects` が再生。音量/ミュートは `audioStore`（sessionStorage 永続・端末ごと）
 - ✅ チケット15: お助けモード。右上トグル（`HelpToggle`）で切替・デフォルトON・端末ごと保持（`helpStore`＋`help-settings-storage.ts`／sessionStorage）。ON＝出せる札ハイライト＋無駄パス確認ダイアログ（`PassWarningDialog`）＋残パス強調＋ターン通知強（`TurnBanner`）、OFF＝強調なし・全札選択可・即パス。判定は既存純関数（`playableCards`/`hasPlayable`）を再利用
-- ▶ 次はフェーズ4の残り（16〜17）: PC横長レイアウト・シニアUI仕上げ／結果画面
+- ✅ チケット16: PC横長レイアウト・シニアUI仕上げ。場は A〜K 13列固定・7中央基準（`Board.tsx`）、相手はアバター＋残枚数/残パス＋切断中/CPU表示（`OpponentArea.tsx`＋`gameStore.players`を席引き当て）。アバターはSVG生成（`scripts/generate-avatars.mjs`→`public/avatars/`・席割当 `src/lib/avatar.ts`）。左上`GameMenu`に「出す前確認」（`uiSettingsStore`・既定ON）＋トップへ戻る、「待って」はローカル演出。確認系は汎用 `ui/ConfirmDialog`に統一（`PassWarningDialog`も委譲）。`Card` に hover 強調
+- ▶ 次はフェーズ4の残り（17）: 結果画面（順位・脱落・拍手／もう一回・解散）
 - 1チケット完了ごとにコンベンショナルコミット。各チケットの実装方針・確定事項はコミット履歴と本ファイル下部「確定済み設計判断」を参照
 
 ## コマンド
@@ -46,6 +47,7 @@ npm run test           # Vitest（watch）
 npm run test:run       # Vitest（1回実行・CI/検証用）
 npm run test:coverage  # Vitest + カバレッジ（@vitest/coverage-v8、src/lib/{sevens,adapter,server}/** 対象）
 npm run cards:generate # トランプSVG 53枚を public/cards/ に再生成
+npm run avatars:generate # プレイヤーアバターSVG 4枚を public/avatars/ に再生成
 ```
 
 **カスタムサーバー（チケット10〜）**: Socket.io と Next.js を同居させるため `server.ts`（`tsx` 実行）が起点。`dev` は `tsx watch server.ts`（server.ts 編集時はプロセス再起動＝全 socket 切断、再接続は#13）。ページの HMR は `next({dev,turbopack:dev})` が従来どおり提供。LAN 公開のため `host=0.0.0.0`（`HOST`/`PORT`/`CPU_DELAY_MS` env で上書き可）。`next.config.ts` の `allowedDevOrigins` で他端末からの dev アクセスを許可。
@@ -64,17 +66,20 @@ npm run cards:generate # トランプSVG 53枚を public/cards/ に再生成
 - `src/lib/sevens/` — ゲームロジック層（純粋TS）: `cards.ts` / `deal.ts` / `board.ts` / `playable.ts` / `pass.ts` / `state.ts` / `ranking.ts` と `cpu/`（`types.ts`＝`CpuStrategy`/`CpuStrength` / `weak.ts` / `medium.ts` / `strong.ts` / `heuristics.ts` / `index.ts`＝`strategyFor`）。各ファイルに `*.test.ts`
 - `src/components/game/` — 対局UI: `GameBoard.tsx`（`/room/[id]` のネットワーク版オーケストレータ・`gameState` 購読）/ `Board.tsx` / `HandCards.tsx` / `ActionButtons.tsx` / `OpponentArea.tsx` / `Card.tsx`
 - `src/components/room/` — 部屋フロー: `HostScreen.tsx`／`HostLobby.tsx`／`JoinScreen.tsx`／`PlayerList.tsx`／`SoloStartButton.tsx`／`QrCode.tsx`／`useServerInfo.ts`／`useGotoRoomOnStart.ts`
-- `src/components/ui/` — シニアUIキット: `Button.tsx`（`buttonVariants`・タップ60px）/ `Input.tsx` / `Heading.tsx` / `ScreenContainer.tsx` / `index.ts`
+- `src/components/ui/` — シニアUIキット: `Button.tsx`（`buttonVariants`・タップ60px）/ `Input.tsx` / `Heading.tsx` / `ScreenContainer.tsx` / `ConfirmDialog.tsx`（汎用確認モーダル・#16）/ `index.ts`
 - `src/components/audio/` — 音声UI: `AudioControls.tsx`（音量スライダー＋ミュート・`audioStore` 購読）/ `index.ts`
-- `src/components/help/` — お助けモードUI（#15）: `HelpToggle.tsx`（ON/OFFトグル）/ `PassWarningDialog.tsx`（無駄パス確認モーダル）/ `TurnBanner.tsx`（ターン通知・残パス強調）/ `index.ts`
+- `src/components/help/` — お助けモードUI（#15）: `HelpToggle.tsx`（ON/OFFトグル）/ `PassWarningDialog.tsx`（無駄パス確認＝`ui/ConfirmDialog`へ委譲）/ `TurnBanner.tsx`（ターン通知・残パス強調）/ `index.ts`
+- 対局UI追加（#16）: `src/components/game/` に `Avatar.tsx`（席→SVGアバター）/ `GameMenu.tsx`（左上メニュー・出す前確認トグル＋トップへ戻る）。`Board.tsx`=A〜K13列7中央、`OpponentArea.tsx`=アバター/接続表示、`ActionButtons.tsx`=パス/自分アバター+待って/出すの操作バー
 - `src/lib/audio/` — 音声層（#14）: `events.ts`（`diffGameState`＝状態差分→音イベントの純関数）＋`events.test.ts` / `speech.ts`（Web Speech API 読み上げ）/ `sfx.ts`（mp3 効果音・未配置で無音）/ `unlock.ts`（自動再生解禁）/ `useAudioEffects.ts`（gameState 購読→再生フック）
 - `src/app/` — `layout.tsx`（`lang="ja"`・metadata）/ `page.tsx`（トップメニュー）/ `host/page.tsx` / `join/page.tsx`（`await searchParams`）/ `room/[id]/page.tsx`（`await params`）/ `api/server-info/route.ts`（LAN URL）/ `globals.css`
 - `public/cards/` — トランプSVG 53枚（`scripts/generate-cards.mjs` で生成）
 - `public/audio/` — 効果音mp3（固定名・ユーザー配置・未配置でも無音）。`README.md` に期待ファイル名と仕様
+- `public/avatars/` — プレイヤーアバターSVG 4枚（`scripts/generate-avatars.mjs` で生成・席番号で割当）
 - `server.ts`（ルート） — Next.js + Socket.io 同居のカスタムサーバー。RoomStore を権威に socket イベントを捌くグルー（ルールは持たない）
 - `src/lib/adapter/` — 通信層: `types.ts`（`SevensAdapter` 契約）/ `local.ts`（`LocalAdapter`・Socket.io）/ `remote.ts`（将来スタブ）/ `connect.ts`（`ensureConnected`）。`local.test.ts` / `sync.test.ts`（in-process 結合）
 - `src/lib/server/` — `session.ts`（`RoomStore`＝サーバー権威の部屋・席・状態管理）と `session.test.ts`
-- `src/lib/store/` — Zustand: `gameStore.ts`（サーバー同期ストア）/ `useGameConnection.ts`（接続フック・再水和）/ `session-storage.ts`（入室セッションの sessionStorage 永続化）/ `audioStore.ts`＋`audio-settings-storage.ts`（音量・ミュート／sessionStorage）/ `helpStore.ts`＋`help-settings-storage.ts`（お助けモード／sessionStorage）。`gameStore.test.ts` / `session-storage.test.ts`
+- `src/lib/store/` — Zustand: `gameStore.ts`（サーバー同期ストア）/ `useGameConnection.ts`（接続フック・再水和）/ `session-storage.ts`（入室セッションの sessionStorage 永続化）/ `audioStore.ts`＋`audio-settings-storage.ts`（音量・ミュート／sessionStorage）/ `helpStore.ts`＋`help-settings-storage.ts`（お助けモード／sessionStorage）/ `uiSettingsStore.ts`＋`ui-settings-storage.ts`（出す前確認など／sessionStorage）。`gameStore.test.ts` / `session-storage.test.ts`
+- `src/lib/avatar.ts` — 席番号→アバターSVGパス（`avatarSrcForSeat`）。`avatar.test.ts`
 - `src/lib/cn.ts` — Tailwind クラス結合の最小ヘルパ
 
 ## アーキテクチャ（実装方針）
@@ -126,6 +131,7 @@ npm run cards:generate # トランプSVG 53枚を public/cards/ に再生成
 - **切断・再接続（チケット13）**: サーバーは席を保持し（`markDisconnected` で `connected=false`）、切断中は CPU 代行（`stepAuto`）。クライアントは入室時に `roomId/seat/token` を **sessionStorage** に保存（`session-storage.ts`）し、リロード時は `useGameConnection` が `restoreSession` で再水和→`onConnectionChange('connected')` が `room:reconnect` を発火→`broadcast` で権威状態を復元。再接続失敗（部屋消滅）はセッション破棄＋ids リセットで「部屋が見つかりません」へ。ホストPC落ち＝サーバー消失＝対局終了（致命的復元なし）。socket.io の既定リトライに依存（指数バックオフ等は足さない）
 - **音声・効果音（チケット14）**: 専用 Socket イベントは増やさず、クライアントは `game:state` の**前後差分**で「何が起きたか」を導出する。純関数 `diffGameState(prev,next)`（`src/lib/audio/events.ts`）が play/pass/finish/eliminated/deal/end を返す（1遷移=1アクションなので素直。脱落の場放出を出札と誤検出しないよう脱落を先に判定／出した札は `board` 差分で特定／配札は「場=初期7のみ＋手札+場=52」で判定）。`prev===null`（セッション初回観測）はベースライン＝配札以外は無音にし、再接続時の一斉再生を防ぐ。`useAudioEffects` が `gameStore.subscribe` で購読しマウント時に現値も1度評価（ロビー開始→遷移で初回 state を取りこぼさないため）。**読み上げは Web Speech API**（`speech.ts`・録音不要・`cardSpeech` で「ダイヤの8！」等）、**効果音は mp3**（`sfx.ts`・固定名・`onerror`/play 拒否で無音フォールバック＝未配置でもエラーにしない）。音量/ミュートは `audioStore`＋`audio-settings-storage.ts`（sessionStorage・端末ごと・既定0.5）。自動再生ポリシーは `unlock.ts` が初回操作で解禁。全端末が全イベントで発音し、にぎやかさは端末ごとの音量で各自調整（ターン通知音は#15、結果演出は#17）
 - **お助けモード（チケット15）**: 判定ロジックは既存純関数（`playableCards`/`hasPlayable`／`pass.ts` の `isWastefulPass`）を再利用し、本チケットは UI＋トグル状態の配線のみ。トグルは端末ごと（`helpStore`＋`help-settings-storage.ts`／sessionStorage `sevens:help`・既定ON）で、`audioStore` と同じく初期値ONで描画→マウント後 `hydrate()` で復元（SSR不整合回避）。`HandCards` は `helpMode` prop で挙動切替: **ON**＝出せる札ハイライト＋出せない札グレーアウト＋出せる札のみクリック可、**OFF**＝強調なし・手番中は全札クリック可（不正手は `GameBoard` の `canPlay` と「出す」ボタン非活性＋サーバー権威で弾く）。無駄パス警告は `helpMode && hasPlayable(...)` のとき `PassWarningDialog` を挟む（OFF や出せる札なしは即パス）。ターン通知/残パス強調は `TurnBanner`（ON＝点滅バナー＋残0警告色、OFF＝控えめ）。「待って」「出す前確認」「脱落警告」は#16、ターン通知音は付けない（音源追加回避）
+- **PC横長レイアウト・シニアUI（チケット16）**: 場（`Board.tsx`）は **A〜K の13列固定**で**7を中央基準**にし、未配置ランクは空きスロット枠（7枠は強調）で「左右に伸びる」様子を可視化（脱落の飛び札＝隙間も空きスロットで自然表現）。横長最優先、狭幅は `overflow-x-auto`。相手（`OpponentArea.tsx`）はアバター＋名前＋残枚数＋残パス＋手番強調＋切断中/CPUバッジ。CPU/接続状態は `GameState.players`（`Player`）に無いので **`gameStore.players`（`PlayerInfo[]`）を席で引き当て**（`infoBySeat`）て渡す。**アバターは席番号で決まる装飾**（`avatarSrcForSeat`・名前は別表示・記録には使わない）。**「待って」はローカル演出のみ**（サーバーは接続中human の手番を `stepAuto` で自動進行しない＝無期限に待つため、機能的停止は不要。手番が移れば自動解除）。**「出す前確認」**は `uiSettingsStore`（sessionStorage `sevens:ui`・既定ON）で、`audioStore`/`helpStore` と同じく初期ON描画→`hydrate()`。確認モーダルは汎用 `ui/ConfirmDialog` に一本化し `PassWarningDialog` も委譲（重複排除）。設定トグルと退室は左上 `GameMenu` に集約（4.1 のメニュー＝左上／音量・お助け＝右上）
 
 ## Next.js App Router ベストプラクティス（15.5系）
 

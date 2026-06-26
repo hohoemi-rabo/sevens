@@ -1,37 +1,64 @@
 /**
  * 中央の場（4スートの並び）の表示（プレゼンテーショナル）。
  *
- * 各スートを1行で表示し、配置済みのランク（昇順）を小さめのカードで描画する。
- * 未着手（空配列）のスートは空のプレースホルダを示す。
- * 隙間（脱落で放出された飛んだ札）の見せ方の作り込みは 16 で行う。
+ * REQUIREMENTS 4.1/4.2: A〜K を横一列の固定13列で並べ、7を中央基準にして左右に伸びる様子を
+ * 直感的に見せる。配置済みランクはカード、未配置はうっすい空きスロットで「これから伸びる場所」を示す。
+ * 脱落で飛んだ札（隙間）は空きスロットのまま残るので、本来ルールの「隙間」も自然に表現される。
+ * 横長最優先。狭い画面は横スクロール（タブレット対応）。
  */
-import { SUITS, SUIT_LABEL, isRedSuit } from '@/lib/sevens/cards'
+import { SUITS, RANKS, SUIT_LABEL, isRedSuit, type Suit, type Rank } from '@/lib/sevens/cards'
 import type { BoardState } from '@/lib/sevens/board'
 import Card from './Card'
 
+const SUIT_SYMBOL: Record<Suit, string> = { s: '♠', h: '♥', d: '♦', c: '♣' }
+
+/** 場の短いランク表記（A/2..10/J/Q/K）。読み上げ用の RANK_LABEL とは別（視認性優先）。 */
+const shortRank = (rank: Rank): string =>
+  (({ 1: 'A', 11: 'J', 12: 'Q', 13: 'K' }) as Record<number, string>)[rank] ?? String(rank)
+
+const PIVOT: Rank = 7
+
+function SuitRow({ suit, pile }: { suit: Suit; pile: readonly Rank[] }) {
+  const placed = new Set<number>(pile)
+  const color = isRedSuit(suit) ? 'text-red-600' : 'text-gray-100'
+
+  return (
+    <div className="flex items-center gap-3">
+      <div className={`flex w-12 shrink-0 items-center justify-center text-3xl font-bold ${color}`}>
+        {SUIT_SYMBOL[suit]}
+        <span className="sr-only">{SUIT_LABEL[suit]}</span>
+      </div>
+      <div className="flex items-center gap-1">
+        {RANKS.map((rank) => {
+          if (placed.has(rank)) {
+            return <Card key={rank} card={{ suit, rank }} size="sm" />
+          }
+          const isPivot = rank === PIVOT
+          return (
+            <div
+              key={rank}
+              aria-hidden
+              className={`flex h-[67px] w-12 items-center justify-center rounded-lg border-2 border-dashed text-sm font-bold ${
+                isPivot ? 'border-yellow-400/80 text-yellow-300' : 'border-white/20 text-white/30'
+              }`}
+            >
+              {shortRank(rank)}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function Board({ board }: { board: BoardState }) {
   return (
-    <div className="flex flex-col gap-2 rounded-2xl bg-green-900/40 p-4">
-      {SUITS.map((suit) => {
-        const pile = board[suit]
-        const color = isRedSuit(suit) ? 'text-red-500' : 'text-gray-100'
-        return (
-          <div key={suit} className="flex items-center gap-3">
-            <div className={`w-20 shrink-0 text-lg font-bold ${color}`}>
-              {SUIT_LABEL[suit]}
-            </div>
-            <div className="flex min-h-[67px] flex-wrap items-center gap-1">
-              {pile.length === 0 ? (
-                <span className="text-sm text-gray-300">（まだ出ていません）</span>
-              ) : (
-                pile.map((rank) => (
-                  <Card key={rank} card={{ suit, rank }} size="sm" />
-                ))
-              )}
-            </div>
-          </div>
-        )
-      })}
+    <div className="overflow-x-auto rounded-2xl bg-green-900/40 p-4">
+      <div className="flex min-w-max flex-col gap-2">
+        {SUITS.map((suit) => (
+          <SuitRow key={suit} suit={suit} pile={board[suit]} />
+        ))}
+      </div>
     </div>
   )
 }

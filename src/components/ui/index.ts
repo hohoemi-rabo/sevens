@@ -2,6 +2,8 @@
 
 export { Button, buttonVariants } from "./Button";
 export type { ButtonProps, ButtonSize, ButtonVariant, ButtonVariantOptions } from "./Button";
+export { ConfirmDialog } from "./ConfirmDialog";
+export type { ConfirmDialogProps } from "./ConfirmDialog";
 export { Heading } from "./Heading";
 export type { HeadingProps } from "./Heading";
 export { Input } from "./Input";

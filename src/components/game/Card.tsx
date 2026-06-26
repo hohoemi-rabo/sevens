@@ -40,7 +40,9 @@ export default function Card({
   const classes = [
     SIZE[size],
     'rounded-lg bg-white shadow-md select-none transition-transform',
+    // マウス前提（4.2）: クリック可なら hover で持ち上げ＋リング。選択中は hover 効果を出さない。
     onClick ? 'cursor-pointer' : '',
+    onClick && !selected ? 'hover:-translate-y-1 hover:ring-2 hover:ring-sky-300' : '',
     highlighted ? 'ring-4 ring-yellow-400' : '',
     selected ? '-translate-y-3 ring-4 ring-sky-500' : '',
     dimmed ? 'opacity-40 grayscale' : '',

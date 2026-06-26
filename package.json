@@ -10,7 +10,8 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "cards:generate": "node scripts/generate-cards.mjs"
+    "cards:generate": "node scripts/generate-cards.mjs",
+    "avatars:generate": "node scripts/generate-avatars.mjs"
   },
   "dependencies": {
     "next": "15.5.19",
