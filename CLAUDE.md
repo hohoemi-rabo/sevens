@@ -29,7 +29,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - ✅ チケット10: 通信層（`server.ts`＋`src/lib/adapter/`＋`src/lib/server/session.ts`＋`src/lib/store/`）。サーバー権威の RoomStore・LocalAdapter・Zustand ストアを実装し、in-process 結合テストで複数クライアント同期を機械保証
 - ✅ チケット11: 部屋作成・合言葉入室・QR・席割りUI。トップ（`/`）→`/host`（合言葉/QR/パス回数/CPU強さ/開始）→`/join`（合言葉＋名前）→`/room/[id]`（ネットワーク版 `GameBoard`）。「ひとりで遊ぶ」1タップ導線あり
 - ✅ チケット12: CPU難易度（弱/中/強の思考）。`cpu/{weak,medium,strong}.ts`＋`heuristics.ts`、`strategyFor` で解決。中＝自分中心、強＝相手の手札を読む（アバター素材・表示は#16/#17へ）
-- ▶ 次はフェーズ3の残り（13）: 切断/再接続
+- ✅ チケット13: 切断・再接続。サーバー側シーム（#10）に加え、入室セッション（`roomId/seat/token`）を sessionStorage 永続化＋リロード時に再水和して自動再接続。切断中はバナー表示。**フェーズ3完了**
+- ▶ 次はフェーズ4（14〜17）: 音声・効果音／お助けモード／PC横長レイアウト・シニアUI仕上げ／結果画面
 - 1チケット完了ごとにコンベンショナルコミット。各チケットの実装方針・確定事項はコミット履歴と本ファイル下部「確定済み設計判断」を参照
 
 ## コマンド
@@ -67,7 +68,7 @@ npm run cards:generate # トランプSVG 53枚を public/cards/ に再生成
 - `server.ts`（ルート） — Next.js + Socket.io 同居のカスタムサーバー。RoomStore を権威に socket イベントを捌くグルー（ルールは持たない）
 - `src/lib/adapter/` — 通信層: `types.ts`（`SevensAdapter` 契約）/ `local.ts`（`LocalAdapter`・Socket.io）/ `remote.ts`（将来スタブ）/ `connect.ts`（`ensureConnected`）。`local.test.ts` / `sync.test.ts`（in-process 結合）
 - `src/lib/server/` — `session.ts`（`RoomStore`＝サーバー権威の部屋・席・状態管理）と `session.test.ts`
-- `src/lib/store/` — Zustand: `gameStore.ts`（サーバー同期ストア）/ `useGameConnection.ts`（接続フック）。`gameStore.test.ts`
+- `src/lib/store/` — Zustand: `gameStore.ts`（サーバー同期ストア）/ `useGameConnection.ts`（接続フック・再水和）/ `session-storage.ts`（入室セッションの sessionStorage 永続化）。`gameStore.test.ts` / `session-storage.test.ts`
 - `src/lib/cn.ts` — Tailwind クラス結合の最小ヘルパ
 
 ## アーキテクチャ（実装方針）
@@ -116,6 +117,7 @@ npm run cards:generate # トランプSVG 53枚を public/cards/ に再生成
 - **部屋フローUI（チケット11）**: 画面遷移は `/`→`/host`or`/join`→`/room/[id]`。ロビーの開始（`gameState` 到着）で `useGotoRoomOnStart` が `/room/[id]` へ push。接続は `useGameConnection`/`ensureConnected` 経由で維持し、**アンマウントで切らない**（遷移で socket を落とさない）。QR/URL はホストの LAN アドレス（`/api/server-info`）＋`?code=合言葉`。`GameBoard` は `gameState` を購読するだけ（楽観適用なし・`send` で操作）。リロード/直アクセスは部屋情報を失う→「部屋が見つかりません」（本格再接続は#13）
 - **CPU強さ**: `CpuStrength`（`weak`/`medium`/`strong`）を `StartOptions`→`RoomStore`（席ごと）→`stepAuto` の `strategyFor()` まで配線。思考は `cpu/{weak,medium,strong}.ts`＋共通 `heuristics.ts`（`centrality`/`opponentGain`/`threatHandSize`）。**中＝自分中心**（外側の札を出し7寄りゲートを温存・相手は覗かない・パスしない）、**強＝相手の実手札を読む**（得させる札を避け、上がり間近の相手のキーカードをパスで止める／脱落回避ガード付き）。乱数なし＋`cardId` タイブレークで決定論的、パス回数有限で必ず終局。CPUアバター素材・表示は#16/#17
 - **手札の情報露出**: `game:state` は全席の手札を含むが、UIは自席手札＋相手の枚数（裏面）のみ表示。教室内クローズドLAN前提でアンチチートはしない割り切り
+- **切断・再接続（チケット13）**: サーバーは席を保持し（`markDisconnected` で `connected=false`）、切断中は CPU 代行（`stepAuto`）。クライアントは入室時に `roomId/seat/token` を **sessionStorage** に保存（`session-storage.ts`）し、リロード時は `useGameConnection` が `restoreSession` で再水和→`onConnectionChange('connected')` が `room:reconnect` を発火→`broadcast` で権威状態を復元。再接続失敗（部屋消滅）はセッション破棄＋ids リセットで「部屋が見つかりません」へ。ホストPC落ち＝サーバー消失＝対局終了（致命的復元なし）。socket.io の既定リトライに依存（指数バックオフ等は足さない）
 
 ## Next.js App Router ベストプラクティス（15.5系）
 
