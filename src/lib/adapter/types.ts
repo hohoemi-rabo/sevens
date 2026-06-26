@@ -6,7 +6,7 @@
 // 7並べはアクションが play/pass の2種だけなので、麻雀（流用元）の多彩なアクションより大幅に
 // シンプル。rematch/dissolve/onDissolved は後続チケット（#11/#17）で追加する。
 
-import type { Action } from "@/lib/sevens/cpu/types";
+import type { Action, CpuStrength } from "@/lib/sevens/cpu/types";
 import type { GameState } from "@/lib/sevens/state";
 import type { StartMode } from "@/lib/sevens/board";
 
@@ -51,12 +51,13 @@ export interface AdapterError {
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
 
-/** ホストのみが指定する開始オプション（CPU難易度は #12、本UIは #11）。 */
+/** ホストのみが指定する開始オプション。CPU強さの思考ロジック実装は #12。 */
 export interface StartOptions {
   readonly seed?: number;
   readonly maxPass?: number; // 1..5（既定3）
   readonly startMode?: StartMode; // 'diamond7' | 'all7'（既定 'diamond7'）
   readonly fillWithCpu?: boolean;
+  readonly cpuStrength?: CpuStrength; // 'weak'|'medium'|'strong'（既定 'weak'）
 }
 
 /** クライアントが送れるアクション = ロジックの Action そのまま（play/pass）。 */

@@ -10,7 +10,7 @@ import { type GameState, initGame, pass, playCard } from "@/lib/sevens/state";
 import { seededRng } from "@/lib/sevens/deal";
 import { isValidMaxPass } from "@/lib/sevens/pass";
 import { type StartMode } from "@/lib/sevens/board";
-import { type Action, decideWeak } from "@/lib/sevens/cpu";
+import { type Action, type CpuStrength, strategyFor } from "@/lib/sevens/cpu";
 import type {
   AdapterError,
   AdapterErrorCode,
@@ -44,6 +44,7 @@ const err = (code: AdapterErrorCode): Err => ({ ok: false, error: { code, messag
 const SEATS: readonly Seat[] = [0, 1, 2, 3];
 const DEFAULT_MAX_PASS = 3;
 const DEFAULT_START_MODE: StartMode = "diamond7";
+const DEFAULT_CPU: CpuStrength = "weak";
 // CPU席の名前（GameTable.tsx のキャラ名を踏襲）。席順に割り当てる。
 const CPU_NAMES = ["りつこ", "ハジメ", "ミミ", "サブ"] as const;
 
@@ -55,6 +56,8 @@ interface SeatSlot {
   connected: boolean;
   token: ClientToken;
   socketId: string | null; // グルーが束ねる（#13 シーム）
+  /** CPU席の強さ（人間席は null）。stepAuto が strategyFor で思考を解決する。 */
+  cpuStrength: CpuStrength | null;
 }
 
 interface Room {
@@ -108,6 +111,7 @@ export class RoomStore {
       connected: true,
       token,
       socketId: null,
+      cpuStrength: null,
     };
     this.rooms.set(roomId, {
       roomId,
@@ -138,12 +142,13 @@ export class RoomStore {
       connected: true,
       token,
       socketId: null,
+      cpuStrength: null,
     };
     return ok({ roomId: room.roomId, seat, token });
   }
 
-  /** 空席をCPUで埋める（冪等・占有席は変更しない）。 */
-  fillWithCpu(roomId: RoomId): void {
+  /** 空席をCPUで埋める（冪等・占有席は変更しない）。strength は空席のCPUに割り当てる。 */
+  fillWithCpu(roomId: RoomId, strength: CpuStrength = DEFAULT_CPU): void {
     const room = this.rooms.get(roomId);
     if (!room || room.started) return;
     for (const s of SEATS) {
@@ -155,6 +160,7 @@ export class RoomStore {
           connected: true,
           token: randToken(),
           socketId: null,
+          cpuStrength: strength,
         };
       }
     }
@@ -167,8 +173,8 @@ export class RoomStore {
     const maxPass = opts?.maxPass ?? DEFAULT_MAX_PASS;
     if (!isValidMaxPass(maxPass)) return err("INVALID_OPTIONS");
     const startMode = opts?.startMode ?? DEFAULT_START_MODE;
-    // 空席は安全側でCPU補完（4席必ず埋める）。
-    this.fillWithCpu(roomId);
+    // 空席は安全側でCPU補完（4席必ず埋める）。CPU強さはホスト指定（既定 weak）。
+    this.fillWithCpu(roomId, opts?.cpuStrength ?? DEFAULT_CPU);
     const seed = opts?.seed ?? Math.floor(Math.random() * 0x7fffffff);
     const players = SEATS.map((s) => {
       const slot = room.seats[s]!; // fill 後は全席埋まる
@@ -215,7 +221,7 @@ export class RoomStore {
     const slot = room.seats[seat];
     const auto = !!slot && (slot.isCpu || !slot.connected); // 切断中の人間は CPU が代行
     if (!auto) return { state, acted: false }; // 接続中の人間の手番で停止
-    const action = decideWeak(state, slot.playerId);
+    const action = strategyFor(slot.cpuStrength ?? DEFAULT_CPU)(state, slot.playerId);
     try {
       const next =
         action.type === "play"

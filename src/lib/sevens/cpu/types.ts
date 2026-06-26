@@ -14,3 +14,6 @@ export type Action =
 
 /** ゲーム状態と対象プレイヤーから1手を決める純関数。 */
 export type CpuStrategy = (state: GameState, playerId: string) => Action
+
+/** CPUの強さ（ホストが部屋作成時に選ぶ）。中/強の思考はチケット12で実装。 */
+export type CpuStrength = 'weak' | 'medium' | 'strong'

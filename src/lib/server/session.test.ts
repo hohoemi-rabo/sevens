@@ -113,6 +113,22 @@ describe("RoomStore: CPU補完・開始", () => {
     expect(players[1].isCpu).toBe(false); // 席1の人間は維持
   });
 
+  it("CPU強さ指定で開始しても終局まで到達する（当面 weak 挙動）", () => {
+    const store = new RoomStore();
+    const { roomId } = created(store);
+    const res = store.startGame(roomId, { seed: 7, cpuStrength: "strong" });
+    expect(res.ok).toBe(true);
+    // 人間席(0)も機械応答で進め、strategyFor 経由でも終局に至ることを確認。
+    let guard = 0;
+    while (store.getState(roomId)!.phase !== "ended" && guard++ < 2000) {
+      store.advanceAuto(roomId);
+      const st = store.getState(roomId)!;
+      if (st.phase === "ended") break;
+      store.applyPlayerAction(roomId, st.currentSeat, decideWeak(st, `p${st.currentSeat}`));
+    }
+    expect(store.getState(roomId)!.phase).toBe("ended");
+  });
+
   it("同じ seed なら GameState は決定的", () => {
     const a = new RoomStore();
     const b = new RoomStore();
