@@ -27,8 +27,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - ✅ フェーズ1（01〜06）: ゲームロジック土台＋ローカル単独でCPU対戦が動く
 - ✅ フェーズ2（07〜09）: ルール完成（パス/脱落・順位）＋ロジック層の単体テスト整備
 - ✅ チケット10: 通信層（`server.ts`＋`src/lib/adapter/`＋`src/lib/server/session.ts`＋`src/lib/store/`）。サーバー権威の RoomStore・LocalAdapter・Zustand ストアを実装し、in-process 結合テストで複数クライアント同期を機械保証
-- ✅ チケット11: 部屋作成・合言葉入室・QR・席割りUI。トップ（`/`）→`/host`（合言葉/QR/パス回数/CPU強さ/開始）→`/join`（合言葉＋名前）→`/room/[id]`（ネットワーク版 `GameBoard`）。「ひとりで遊ぶ」1タップ導線あり。CPU強さはセレクタ＋配線まで（中/強の挙動は#12）
-- ▶ 次はフェーズ3の残り（12〜13）: CPU難易度(中/強の思考)・切断/再接続
+- ✅ チケット11: 部屋作成・合言葉入室・QR・席割りUI。トップ（`/`）→`/host`（合言葉/QR/パス回数/CPU強さ/開始）→`/join`（合言葉＋名前）→`/room/[id]`（ネットワーク版 `GameBoard`）。「ひとりで遊ぶ」1タップ導線あり
+- ✅ チケット12: CPU難易度（弱/中/強の思考）。`cpu/{weak,medium,strong}.ts`＋`heuristics.ts`、`strategyFor` で解決。中＝自分中心、強＝相手の手札を読む（アバター素材・表示は#16/#17へ）
+- ▶ 次はフェーズ3の残り（13）: 切断/再接続
 - 1チケット完了ごとにコンベンショナルコミット。各チケットの実装方針・確定事項はコミット履歴と本ファイル下部「確定済み設計判断」を参照
 
 ## コマンド
@@ -57,7 +58,7 @@ npm run cards:generate # トランプSVG 53枚を public/cards/ に再生成
 - パスエイリアス: `@/*` → `./src/*`
 
 ### 現在のディレクトリ構成（実装済み）
-- `src/lib/sevens/` — ゲームロジック層（純粋TS）: `cards.ts` / `deal.ts` / `board.ts` / `playable.ts` / `pass.ts` / `state.ts` / `ranking.ts` と `cpu/`（`types.ts`＝`CpuStrategy`/`CpuStrength` / `weak.ts` / `index.ts`＝`strategyFor`）。各ファイルに `*.test.ts`
+- `src/lib/sevens/` — ゲームロジック層（純粋TS）: `cards.ts` / `deal.ts` / `board.ts` / `playable.ts` / `pass.ts` / `state.ts` / `ranking.ts` と `cpu/`（`types.ts`＝`CpuStrategy`/`CpuStrength` / `weak.ts` / `medium.ts` / `strong.ts` / `heuristics.ts` / `index.ts`＝`strategyFor`）。各ファイルに `*.test.ts`
 - `src/components/game/` — 対局UI: `GameBoard.tsx`（`/room/[id]` のネットワーク版オーケストレータ・`gameState` 購読）/ `Board.tsx` / `HandCards.tsx` / `ActionButtons.tsx` / `OpponentArea.tsx` / `Card.tsx`
 - `src/components/room/` — 部屋フロー: `HostScreen.tsx`／`HostLobby.tsx`／`JoinScreen.tsx`／`PlayerList.tsx`／`SoloStartButton.tsx`／`QrCode.tsx`／`useServerInfo.ts`／`useGotoRoomOnStart.ts`
 - `src/components/ui/` — シニアUIキット: `Button.tsx`（`buttonVariants`・タップ60px）/ `Input.tsx` / `Heading.tsx` / `ScreenContainer.tsx` / `index.ts`
@@ -113,7 +114,7 @@ npm run cards:generate # トランプSVG 53枚を public/cards/ に再生成
 - **通信層（チケット10）**: サーバー権威。`RoomStore`（`src/lib/server/session.ts`）が部屋・席・`GameState` をメモリ保持（DB無し）。**席↔playerId 解決**は `SeatSlot.playerId`（席固定 `p0..p3`）で行い、`startGame` が席順に `initGame({players})` を組むので `state.players[i].seat===i` かつ `id===p{i}` が成立。**不正手の扱い**は `playCard/pass` の throw を `applyPlayerAction` が try/catch して `ILLEGAL_ACTION` に翻訳（麻雀の事前 `validate` の代替）。**CPU/切断者の自動進行**は `stepAuto`（rng不要・`decideWeak`）を `server.ts` の `driveAutoTimed` が遅延チェインで回す。CPU難易度の差し替え点は `stepAuto` 内の `decideWeak`（#12 で `strategyFor()` 化）
 - **アダプタ契約**: `SevensAdapter`（`src/lib/adapter/types.ts`）。`PlayerAction = Action`（play/pass のみ）。`StartOptions` に `maxPass`/`startMode`/`cpuStrength` を持つ。`rematch`/`dissolve`/`onDissolved` は後続チケット（#17）で追加予定
 - **部屋フローUI（チケット11）**: 画面遷移は `/`→`/host`or`/join`→`/room/[id]`。ロビーの開始（`gameState` 到着）で `useGotoRoomOnStart` が `/room/[id]` へ push。接続は `useGameConnection`/`ensureConnected` 経由で維持し、**アンマウントで切らない**（遷移で socket を落とさない）。QR/URL はホストの LAN アドレス（`/api/server-info`）＋`?code=合言葉`。`GameBoard` は `gameState` を購読するだけ（楽観適用なし・`send` で操作）。リロード/直アクセスは部屋情報を失う→「部屋が見つかりません」（本格再接続は#13）
-- **CPU強さ**: `CpuStrength`（`weak`/`medium`/`strong`）を `StartOptions`→`RoomStore`（席ごと）→`stepAuto` の `strategyFor()` まで配線済み。**中/強の思考は未実装で当面すべて `decideWeak`**（差し替えは#12 で `strategyFor` の中身を実装）
+- **CPU強さ**: `CpuStrength`（`weak`/`medium`/`strong`）を `StartOptions`→`RoomStore`（席ごと）→`stepAuto` の `strategyFor()` まで配線。思考は `cpu/{weak,medium,strong}.ts`＋共通 `heuristics.ts`（`centrality`/`opponentGain`/`threatHandSize`）。**中＝自分中心**（外側の札を出し7寄りゲートを温存・相手は覗かない・パスしない）、**強＝相手の実手札を読む**（得させる札を避け、上がり間近の相手のキーカードをパスで止める／脱落回避ガード付き）。乱数なし＋`cardId` タイブレークで決定論的、パス回数有限で必ず終局。CPUアバター素材・表示は#16/#17
 - **手札の情報露出**: `game:state` は全席の手札を含むが、UIは自席手札＋相手の枚数（裏面）のみ表示。教室内クローズドLAN前提でアンチチートはしない割り切り
 
 ## Next.js App Router ベストプラクティス（15.5系）

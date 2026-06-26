@@ -25,7 +25,7 @@
 ### フェーズ3：ローカル4人対戦
 - [x] [10. 通信層（Socket.io / LocalAdapter / server.ts）](./10-communication-socketio.md)
 - [x] [11. 部屋作成・合言葉入室・QR・席割り](./11-room-management.md)
-- [ ] [12. CPU補完（弱・中・強）](./12-cpu-levels.md)
+- [x] [12. CPU補完（弱・中・強）](./12-cpu-levels.md)
 - [ ] [13. 切断・再接続](./13-reconnection.md)
 
 ### フェーズ4：シニア向け仕上げ
