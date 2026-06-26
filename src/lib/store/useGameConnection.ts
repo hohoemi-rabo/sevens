@@ -22,6 +22,9 @@ export const useGameConnection = (): { connection: ConnectionStatus } => {
     if (started.current) return;
     if (connection === "disconnected") {
       started.current = true;
+      // リロード/再読込なら sessionStorage から roomId/seat/token を復元しておく。
+      // connect 後の onConnectionChange('connected') がそれを使って自動再接続する（#13）。
+      useGameStore.getState().restoreSession();
       void useGameStore.getState().connect(new LocalAdapter());
     }
   }, [connection]);

@@ -38,6 +38,7 @@ export function GameBoard({ roomId }: { roomId: string }) {
   useGameConnection(); // 接続維持（タイトル→対局のクライアント遷移で切らない）
   const gameState = useGameStore((s) => s.gameState);
   const mySeat = useGameStore((s) => s.mySeat);
+  const connection = useGameStore((s) => s.connection);
   const send = useGameStore((s) => s.send);
   const [selected, setSelected] = useState<Card | null>(null);
 
@@ -46,7 +47,7 @@ export function GameBoard({ roomId }: { roomId: string }) {
     router.push("/");
   };
 
-  // 直接アクセス/リロードで部屋情報が無い（本格再接続は #13）。
+  // 直接アクセス（保存セッションも無い）／再接続失敗で部屋情報が無い。
   if (!gameState && mySeat === null) {
     return (
       <Centered>
@@ -96,6 +97,15 @@ export function GameBoard({ roomId }: { roomId: string }) {
   return (
     <ScreenContainer showRotateHint className="bg-green-800 text-white">
       <div data-room-id={roomId} className="mx-auto flex max-w-6xl flex-col gap-4">
+        {connection !== "connected" && (
+          <p
+            role="status"
+            className="rounded-xl bg-amber-500 px-4 py-2 text-center text-base font-bold text-black"
+          >
+            通信が切れました。再接続しています…
+          </p>
+        )}
+
         <h1 className="text-center text-2xl font-bold">7並べ</h1>
 
         <OpponentArea players={opponents} currentSeat={gameState.currentSeat} />
