@@ -1,0 +1,86 @@
+// 通信層の共通インターフェースとワイヤ型（REQUIREMENTS §6.2, §7.1, §7.3 / docs/10）。
+// ゲームロジック層から分離した「差し替え可能な通信層」の契約。LocalAdapter（Socket.io）と
+// 将来の RemoteAdapter（クラウド）が同じ SevensAdapter を実装する。
+// ペイロードはすべて JSONシリアライズ可能（GameState はプレーンデータ）。
+//
+// 7並べはアクションが play/pass の2種だけなので、麻雀（流用元）の多彩なアクションより大幅に
+// シンプル。rematch/dissolve/onDissolved は後続チケット（#11/#17）で追加する。
+
+import type { Action } from "@/lib/sevens/cpu/types";
+import type { GameState } from "@/lib/sevens/state";
+import type { StartMode } from "@/lib/sevens/board";
+
+export type RoomId = string;
+export type Passcode = string; // 4桁数字（"0427" 等）
+export type ClientToken = string; // 席ごとの再接続トークン（#13 用シーム）
+/** 席番号 0..3。state.players[i].seat と一致する。 */
+export type Seat = number;
+
+export interface PlayerInfo {
+  readonly seat: Seat;
+  readonly name: string;
+  readonly isCpu: boolean;
+  readonly connected: boolean;
+  readonly isHost: boolean;
+}
+
+/** 入室時にクライアントへ返す「自分は誰か」。passcode はホスト作成時のみ。 */
+export interface SeatAssignment {
+  readonly roomId: RoomId;
+  readonly seat: Seat;
+  readonly token: ClientToken;
+  readonly passcode?: Passcode;
+}
+
+export type AdapterErrorCode =
+  | "ROOM_NOT_FOUND"
+  | "WRONG_PASSCODE"
+  | "ROOM_FULL"
+  | "NAME_REQUIRED"
+  | "GAME_ALREADY_STARTED"
+  | "GAME_NOT_STARTED"
+  | "NOT_HOST"
+  | "ILLEGAL_ACTION"
+  | "INVALID_OPTIONS"
+  | "INTERNAL";
+
+export interface AdapterError {
+  readonly code: AdapterErrorCode;
+  readonly message: string; // そのまま表示できる日本語
+}
+
+export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
+
+/** ホストのみが指定する開始オプション（CPU難易度は #12、本UIは #11）。 */
+export interface StartOptions {
+  readonly seed?: number;
+  readonly maxPass?: number; // 1..5（既定3）
+  readonly startMode?: StartMode; // 'diamond7' | 'all7'（既定 'diamond7'）
+  readonly fillWithCpu?: boolean;
+}
+
+/** クライアントが送れるアクション = ロジックの Action そのまま（play/pass）。 */
+export type PlayerAction = Action;
+
+export type Unsubscribe = () => void;
+
+/** UI/ストアが依存する通信層の契約（Socket.io 等の詳細を隠す）。 */
+export interface SevensAdapter {
+  connect(): Promise<void>;
+  disconnect(): void;
+
+  createRoom(hostName: string): Promise<SeatAssignment>;
+  joinRoom(passcode: Passcode, name: string): Promise<SeatAssignment>;
+  /** 通信断後の再接続で席を再束縛する（トークンで本人確認・#13）。 */
+  reconnect(roomId: RoomId, seat: Seat, token: ClientToken): Promise<void>;
+  start(opts?: StartOptions): Promise<void>;
+
+  /** カードを出す/パスのプレイヤーアクション。エラーは onError 経由（fire-and-forget）。 */
+  send(action: PlayerAction): void;
+
+  onPlayers(cb: (players: readonly PlayerInfo[]) => void): Unsubscribe;
+  onState(cb: (state: GameState) => void): Unsubscribe;
+  onEnd(cb: (state: GameState) => void): Unsubscribe;
+  onError(cb: (err: AdapterError) => void): Unsubscribe;
+  onConnectionChange(cb: (status: ConnectionStatus) => void): Unsubscribe;
+}
