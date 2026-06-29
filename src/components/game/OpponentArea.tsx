@@ -51,6 +51,8 @@ export default function OpponentArea({ players, currentSeat, infoBySeat }: Oppon
         return (
           <div
             key={p.id}
+            // 出す演出（相手→置き場の飛行）でこの席の発射位置を採寸する。
+            data-opponent-seat={p.seat}
             className={`flex min-w-[170px] flex-col items-center gap-1 rounded-xl border-2 p-3 transition-colors ${
               isTurn
                 ? 'border-yellow-400 bg-yellow-100 ring-4 ring-yellow-300'

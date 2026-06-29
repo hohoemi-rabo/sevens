@@ -21,12 +21,12 @@ const PIVOT: Rank = 7
 function SuitRow({
   suit,
   pile,
-  hideCardId,
+  hiddenIds,
 }: {
   suit: Suit
   pile: readonly Rank[]
-  /** 出す演出中、着地まで隠す札の id（`${suit}${rank}`＝cardId 形式）。 */
-  hideCardId?: string | null
+  /** 飛行アニメ中、着地まで隠す札 id の集合（`${suit}${rank}`＝cardId 形式）。 */
+  hiddenIds?: ReadonlySet<string>
 }) {
   const placed = new Set<number>(pile)
   const color = isRedSuit(suit) ? 'text-red-600' : 'text-gray-100'
@@ -42,7 +42,7 @@ function SuitRow({
           const slot = `${suit}${rank}` // cardId と同形式（例: d7）
           if (placed.has(rank)) {
             // 飛行アニメ中の札は着地まで隠す（同サイズの透明枠でレイアウト維持）。
-            if (slot === hideCardId) {
+            if (hiddenIds?.has(slot)) {
               return <div key={rank} aria-hidden className="h-[90px] w-16" />
             }
             return <Card key={rank} card={{ suit, rank }} size="bd" />
@@ -68,11 +68,11 @@ function SuitRow({
 
 export default function Board({
   board,
-  hideCardId,
+  hiddenIds,
 }: {
   board: BoardState
-  /** 出す演出中、着地まで盤面で隠す札の id（cardId）。 */
-  hideCardId?: string | null
+  /** 飛行アニメ中、着地まで盤面で隠す札 id の集合（cardId）。 */
+  hiddenIds?: ReadonlySet<string>
 }) {
   return (
     <div className="overflow-x-auto rounded-2xl bg-green-900/40 p-3">
@@ -80,7 +80,7 @@ export default function Board({
           画面が狭く収まらないときは overflow-x-auto で横スクロールに切り替わる。 */}
       <div className="mx-auto flex w-max flex-col gap-2">
         {SUITS.map((suit) => (
-          <SuitRow key={suit} suit={suit} pile={board[suit]} hideCardId={hideCardId} />
+          <SuitRow key={suit} suit={suit} pile={board[suit]} hiddenIds={hiddenIds} />
         ))}
       </div>
     </div>

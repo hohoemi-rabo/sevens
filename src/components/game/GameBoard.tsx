@@ -8,13 +8,14 @@
  * レイアウトは PC横長最優先（#16・REQUIREMENTS 4.1）: 上=メニュー/相手3人、中央=場、
  * 下=手札＋操作バー。プレゼン部品（Board/HandCards/ActionButtons/OpponentArea/Avatar）を組む。
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { currentPlayer } from "@/lib/sevens/state";
+import { currentPlayer, type GameState } from "@/lib/sevens/state";
+import { diffGameState } from "@/lib/audio/events";
 import { isPlayable, hasPlayable } from "@/lib/sevens/playable";
-import { cardId, type Card } from "@/lib/sevens/cards";
+import { SUITS, cardId, type Card, type Rank } from "@/lib/sevens/cards";
 import type { PlayerInfo } from "@/lib/adapter/types";
 import { useGameConnection } from "@/lib/store/useGameConnection";
 import { useGameStore } from "@/lib/store/gameStore";
@@ -42,32 +43,49 @@ function Centered({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** 飛行アニメの採寸矩形（getBoundingClientRect の DOMRect も構造的に代入可）。 */
+interface Rect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+// 描画前に本物カードを隠して「ちらつき」を防ぐため layout effect を使う。
+// SSR では実行されない（警告回避のため window 有無で出し分け）。
+const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
+const FLY_MS = 520;
+
 /**
- * 出す演出：手元のカードを置き場まで飛ばすゴーストカード（最前面・操作不可）。
- * 採寸済みの from/to 矩形の間を transform で動かす（手札 lg → 盤面 bd へ縮小）。
- * 着地（transitionend）またはフォールバックタイマで onDone を呼ぶ。
+ * 出す/配る演出：カードを目的スロットまで飛ばすゴーストカード（最前面・操作不可）。
+ * 採寸済みの from/to 矩形の間を transform で動かす（自分=手札 lg→盤面 bd へ縮小、
+ * 相手=相手エリアから盤面サイズで並進、配札=7を上からドロップ）。
+ * delay でずらして配札を順に落とす。着地（transitionend）またはフォールバックタイマで onDone。
  */
 function FlyingCard({
   card,
   from,
   to,
+  delay = 0,
   onDone,
 }: {
   card: Card;
-  from: DOMRect;
-  to: DOMRect;
+  from: Rect;
+  to: Rect;
+  delay?: number;
   onDone: () => void;
 }) {
   const [moved, setMoved] = useState(false);
   useEffect(() => {
     const raf = requestAnimationFrame(() => setMoved(true));
-    // transitionend を取りこぼしても必ず後始末する保険（トランジション長＋余裕）。
-    const timer = setTimeout(onDone, 760);
+    // transitionend を取りこぼしても必ず後始末する保険（待機+トランジション長＋余裕）。
+    const timer = setTimeout(onDone, delay + FLY_MS + 240);
     return () => {
       cancelAnimationFrame(raf);
       clearTimeout(timer);
     };
-  }, [onDone]);
+  }, [onDone, delay]);
 
   const dx = to.left - from.left;
   const dy = to.top - from.top;
@@ -90,7 +108,7 @@ function FlyingCard({
           ? `translate(${dx}px, ${dy}px) scale(${scale})`
           : "translate(0, 0) scale(1)",
         transformOrigin: "top left",
-        transition: "transform 520ms cubic-bezier(0.22, 1, 0.36, 1)",
+        transition: `transform ${FLY_MS}ms cubic-bezier(0.22, 1, 0.36, 1) ${delay}ms`,
         zIndex: 60,
         pointerEvents: "none",
         willChange: "transform",
@@ -99,6 +117,15 @@ function FlyingCard({
     />,
     document.body,
   );
+}
+
+/** 飛行中の1枚（cardId をキーに複数同時管理＝配札の7など）。 */
+interface Flyer {
+  id: string;
+  card: Card;
+  from: Rect;
+  to: Rect;
+  delay?: number;
 }
 
 export function GameBoard({ roomId }: { roomId: string }) {
@@ -118,9 +145,14 @@ export function GameBoard({ roomId }: { roomId: string }) {
   const [passWarnOpen, setPassWarnOpen] = useState(false);
   const [playConfirmOpen, setPlayConfirmOpen] = useState(false);
   const [paused, setPaused] = useState(false);
-  // 出す演出（手元→置き場の飛行）。flying=ゴースト、hideCardId=着地まで盤面で隠す札。
-  const [flying, setFlying] = useState<{ card: Card; from: DOMRect; to: DOMRect } | null>(null);
-  const [hideCardId, setHideCardId] = useState<string | null>(null);
+  // 飛行アニメ（出す/配る）。複数同時可（配札の7など）。着地まで該当札を盤面で隠す。
+  const [flyers, setFlyers] = useState<Flyer[]>([]);
+  const hiddenIds = useMemo(() => new Set(flyers.map((f) => f.id)), [flyers]);
+  const addFlyers = (items: Flyer[]) =>
+    setFlyers((prev) => [...prev, ...items.filter((it) => !prev.some((p) => p.id === it.id))]);
+  const removeFlyer = (id: string) => setFlyers((prev) => prev.filter((f) => f.id !== id));
+  // 相手の出札・配札アニメ用に直前の状態を保持して差分検出する（音とは別系統）。
+  const animPrevRef = useRef<GameState | null>(null);
 
   // 席 → PlayerInfo の引き当て（OpponentArea へ接続/CPU 情報を渡す）。
   const infoBySeat = useMemo(() => {
@@ -158,10 +190,70 @@ export function GameBoard({ roomId }: { roomId: string }) {
     if (phase === "playing") {
       setSelected(null);
       setPaused(false);
-      setFlying(null);
-      setHideCardId(null);
     }
   }, [phase]);
+
+  // 配札（開始時の7並び）と相手の出札を飛行アニメで見せる（自分の出札は doPlay で対応済み）。
+  // 着地まで本物を隠すため、描画前に動く layout effect で採寸→flyers 追加し、
+  // ちらつき（一瞬カードが見える）を防ぐ。CPU 着手間隔(0.8〜1.8s) > アニメ(520ms)。
+  useIsoLayoutEffect(() => {
+    const prev = animPrevRef.current;
+    const next = gameState;
+    animPrevRef.current = next;
+    if (!next || prev === next) return;
+    const rectOf = (el: Element): Rect => {
+      const r = el.getBoundingClientRect();
+      return { left: r.left, top: r.top, width: r.width, height: r.height };
+    };
+    for (const ev of diffGameState(prev, next)) {
+      if (ev.kind === "deal") {
+        // 開始時：場の7たちを少しずつ上からドロップして並べる。
+        const drops: Flyer[] = [];
+        let i = 0;
+        for (const suit of SUITS) {
+          if (!next.board[suit].includes(7 as Rank)) continue;
+          const card: Card = { suit, rank: 7 as Rank };
+          const id = cardId(card);
+          const dst = document.querySelector(`[data-card-id="${id}"]`);
+          if (!dst) continue;
+          const to = rectOf(dst);
+          drops.push({
+            id,
+            card,
+            from: { left: to.left, top: to.top - 160, width: to.width, height: to.height },
+            to,
+            delay: i * 110,
+          });
+          i++;
+        }
+        if (drops.length) addFlyers(drops);
+        break;
+      }
+      if (ev.kind === "play" && mySeat !== null && ev.seat !== mySeat) {
+        const id = cardId(ev.card);
+        const srcEl = document.querySelector(`[data-opponent-seat="${ev.seat}"]`);
+        const dstEl = document.querySelector(`[data-card-id="${id}"]`);
+        if (!srcEl || !dstEl) break;
+        const s = rectOf(srcEl);
+        const to = rectOf(dstEl);
+        // 相手は盤面サイズのまま、相手エリア中央 → スロットへ並進させる。
+        addFlyers([
+          {
+            id,
+            card: ev.card,
+            from: {
+              left: s.left + s.width / 2 - to.width / 2,
+              top: s.top + s.height / 2 - to.height / 2,
+              width: to.width,
+              height: to.height,
+            },
+            to,
+          },
+        ]);
+        break; // 1遷移=1出札
+      }
+    }
+  }, [gameState, mySeat]);
 
   // 直接アクセス（保存セッションも無い）／再接続失敗で部屋情報が無い。
   if (!gameState && mySeat === null) {
@@ -219,12 +311,17 @@ export function GameBoard({ roomId }: { roomId: string }) {
     const fromEl = document.querySelector(`[data-card-id="${id}"]`);
     const toEl = document.querySelector(`[data-board-slot="${id}"]`);
     if (fromEl && toEl) {
-      setFlying({
-        card,
-        from: fromEl.getBoundingClientRect(),
-        to: toEl.getBoundingClientRect(),
-      });
-      setHideCardId(id); // 着地まで盤面の本物は隠す（二重表示防止）。
+      const f = fromEl.getBoundingClientRect();
+      const t = toEl.getBoundingClientRect();
+      // 着地まで盤面の本物は隠す（hiddenIds に id が入る＝二重表示防止）。
+      addFlyers([
+        {
+          id,
+          card,
+          from: { left: f.left, top: f.top, width: f.width, height: f.height },
+          to: { left: t.left, top: t.top, width: t.width, height: t.height },
+        },
+      ]);
     }
     send({ type: "play", card });
     setSelected(null);
@@ -279,7 +376,7 @@ export function GameBoard({ roomId }: { roomId: string }) {
           infoBySeat={infoBySeat}
         />
 
-        <Board board={gameState.board} hideCardId={hideCardId} />
+        <Board board={gameState.board} hiddenIds={hiddenIds} />
 
         {ended ? (
           <ResultScreen
@@ -359,17 +456,16 @@ export function GameBoard({ roomId }: { roomId: string }) {
         {selected && <CardView card={selected} size="lg" />}
       </ConfirmDialog>
 
-      {flying && (
+      {flyers.map((f) => (
         <FlyingCard
-          card={flying.card}
-          from={flying.from}
-          to={flying.to}
-          onDone={() => {
-            setFlying(null);
-            setHideCardId(null);
-          }}
+          key={f.id}
+          card={f.card}
+          from={f.from}
+          to={f.to}
+          delay={f.delay}
+          onDone={() => removeFlyer(f.id)}
         />
-      )}
+      ))}
     </ScreenContainer>
   );
 }
