@@ -20,6 +20,8 @@ export interface ConfirmDialogProps {
   cancelLabel: string;
   /** 確定ボタンの色（既定 primary。取消的な確定は danger）。 */
   confirmVariant?: ButtonVariant;
+  /** 確定ボタンを無効化する（例: 今は出せない札のプレビュー）。 */
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   /** キャンセル／Esc／背景クリック。 */
   onCancel: () => void;
@@ -33,6 +35,7 @@ export function ConfirmDialog({
   confirmLabel,
   cancelLabel,
   confirmVariant = "primary",
+  confirmDisabled = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -71,7 +74,12 @@ export function ConfirmDialog({
           <Button autoFocus variant="secondary" size="lg" onClick={onCancel}>
             {cancelLabel}
           </Button>
-          <Button variant={confirmVariant} size="lg" onClick={onConfirm}>
+          <Button
+            variant={confirmVariant}
+            size="lg"
+            disabled={confirmDisabled}
+            onClick={onConfirm}
+          >
             {confirmLabel}
           </Button>
         </div>

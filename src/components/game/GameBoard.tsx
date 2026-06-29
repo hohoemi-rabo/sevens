@@ -18,7 +18,6 @@ import type { PlayerInfo } from "@/lib/adapter/types";
 import { useGameConnection } from "@/lib/store/useGameConnection";
 import { useGameStore } from "@/lib/store/gameStore";
 import { useHelpStore } from "@/lib/store/helpStore";
-import { useUiSettingsStore } from "@/lib/store/uiSettingsStore";
 import { useAudioEffects } from "@/lib/audio/useAudioEffects";
 import { AudioControls } from "@/components/audio";
 import { HelpToggle, PassWarningDialog, TurnBanner } from "@/components/help";
@@ -53,7 +52,6 @@ export function GameBoard({ roomId }: { roomId: string }) {
   const dissolved = useGameStore((s) => s.dissolved);
   const send = useGameStore((s) => s.send);
   const helpMode = useHelpStore((s) => s.helpMode);
-  const confirmBeforePlay = useUiSettingsStore((s) => s.confirmBeforePlay);
   const [selected, setSelected] = useState<Card | null>(null);
   const [passWarnOpen, setPassWarnOpen] = useState(false);
   const [playConfirmOpen, setPlayConfirmOpen] = useState(false);
@@ -127,21 +125,24 @@ export function GameBoard({ roomId }: { roomId: string }) {
   const canPlay = isMyTurn && !!selected && isPlayable(selected, gameState.board);
   const isHost = infoBySeat(mySeat)?.isHost ?? mySeat === 0; // ホスト席は 0（hostSeat）
 
+  // 手札タップ＝即・中央ポップアップ（生徒さんプレイのFB対応）。
+  // ノートPCで「出す」ボタンが折り返しの下に隠れスクロールが要る問題を解消するため、
+  // 選択した瞬間に画面中央のモーダルで確認する（出せない札もプレビューし理由を示す）。
+  const handleSelect = (card: Card) => {
+    setSelected(card);
+    setPlayConfirmOpen(true);
+  };
+
+  const closePlayConfirm = () => {
+    setPlayConfirmOpen(false);
+    setSelected(null);
+  };
+
   const doPlay = () => {
-    if (!selected) return;
+    if (!selected || !isPlayable(selected, gameState.board)) return;
     send({ type: "play", card: selected });
     setSelected(null);
     setPlayConfirmOpen(false);
-  };
-
-  const handlePlay = () => {
-    if (!canPlay || !selected) return;
-    // 「出す前確認」ON のときは送信前に確認（誤操作リカバリ・#16・REQUIREMENTS 3.7）。
-    if (confirmBeforePlay) {
-      setPlayConfirmOpen(true);
-      return;
-    }
-    doPlay();
   };
 
   const doPass = () => {
@@ -160,9 +161,14 @@ export function GameBoard({ roomId }: { roomId: string }) {
     doPass();
   };
 
+  const showActionBar = isMyTurn && human.status === "playing" && !paused && !ended;
+
   return (
     <ScreenContainer showRotateHint className="bg-green-800 text-white">
-      <div data-room-id={roomId} className="mx-auto flex max-w-6xl flex-col gap-4">
+      <div
+        data-room-id={roomId}
+        className={`mx-auto flex max-w-6xl flex-col gap-4 ${showActionBar ? "pb-28" : ""}`}
+      >
         {connection !== "connected" && (
           <p
             role="status"
@@ -226,27 +232,26 @@ export function GameBoard({ roomId }: { roomId: string }) {
                   hand={human.hand}
                   board={gameState.board}
                   selectedId={selected ? cardId(selected) : null}
-                  onSelect={setSelected}
+                  onSelect={handleSelect}
                   disabled={!isMyTurn || human.status !== "playing"}
                   helpMode={helpMode}
                 />
-
-                {isMyTurn && human.status === "playing" && (
-                  <ActionButtons
-                    canPlay={canPlay}
-                    onPlay={handlePlay}
-                    onPass={handlePass}
-                    onWait={() => setPaused(true)}
-                    passesLeft={human.passesLeft}
-                    mySeat={mySeat}
-                    myName={human.name}
-                  />
-                )}
               </>
             )}
           </div>
         )}
       </div>
+
+      {/* 操作バーは画面下に固定（fixed）。スクロール無しに必ず押せる。 */}
+      {showActionBar && (
+        <ActionButtons
+          onPass={handlePass}
+          onWait={() => setPaused(true)}
+          passesLeft={human.passesLeft}
+          mySeat={mySeat}
+          myName={human.name}
+        />
+      )}
 
       <PassWarningDialog
         open={passWarnOpen}
@@ -256,12 +261,16 @@ export function GameBoard({ roomId }: { roomId: string }) {
 
       <ConfirmDialog
         open={playConfirmOpen}
-        title="このカードを出しますか？"
+        title={canPlay ? "このカードを出しますか？" : "今は出せません"}
+        message={
+          canPlay ? undefined : "このカードは今は出せません。ほかの札を選ぶか、パスしてください。"
+        }
         confirmLabel="出す"
-        cancelLabel="やめる"
+        cancelLabel={canPlay ? "やめる" : "とじる"}
         confirmVariant="primary"
+        confirmDisabled={!canPlay}
         onConfirm={doPlay}
-        onCancel={() => setPlayConfirmOpen(false)}
+        onCancel={closePlayConfirm}
       >
         {selected && <CardView card={selected} size="lg" />}
       </ConfirmDialog>

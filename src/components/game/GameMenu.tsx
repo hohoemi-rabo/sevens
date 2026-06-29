@@ -1,11 +1,11 @@
 "use client";
 
 // 左上メニュー（docs/16・REQUIREMENTS 4.1）。
-// 「出す前に確認する」トグル（誤操作リカバリ・3.7）と「トップへ戻る」をまとめる。
+// 「トップへ戻る」をまとめる。出す前の確認は手札タップ時の中央ポップアップに
+// 一本化したため（生徒さんプレイのFB対応）、ここに確認トグルは持たない。
 // シニア配慮: 大きなボタン・高コントラスト。背景クリック/Escで閉じる軽量オーバーレイ。
 
 import { useEffect, useState } from "react";
-import { useUiSettingsStore } from "@/lib/store/uiSettingsStore";
 import { Button } from "@/components/ui";
 
 export interface GameMenuProps {
@@ -15,14 +15,6 @@ export interface GameMenuProps {
 
 export function GameMenu({ onBackToTitle }: GameMenuProps) {
   const [open, setOpen] = useState(false);
-  const confirmBeforePlay = useUiSettingsStore((s) => s.confirmBeforePlay);
-  const toggleConfirm = useUiSettingsStore((s) => s.toggleConfirmBeforePlay);
-  const hydrate = useUiSettingsStore((s) => s.hydrate);
-
-  // マウント後に保存値へ復元（SSR は既定で描画 → 端末設定に合わせる）。
-  useEffect(() => {
-    hydrate();
-  }, [hydrate]);
 
   useEffect(() => {
     if (!open) return;
@@ -61,21 +53,6 @@ export function GameMenu({ onBackToTitle }: GameMenuProps) {
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="text-xl font-bold">メニュー</h2>
-
-            <label className="mt-5 flex items-center justify-between gap-3 rounded-xl border-2 border-gray-200 p-3">
-              <span className="text-base font-bold">出す前に確認する</span>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={confirmBeforePlay}
-                onClick={toggleConfirm}
-                className={`inline-flex min-h-tap min-w-tap items-center justify-center rounded-xl px-4 text-base font-bold transition-colors ${
-                  confirmBeforePlay ? "bg-emerald-500 text-white" : "bg-gray-200 text-gray-900"
-                }`}
-              >
-                {confirmBeforePlay ? "ON" : "OFF"}
-              </button>
-            </label>
 
             <div className="mt-6 flex flex-col gap-3">
               <Button variant="secondary" size="lg" onClick={() => setOpen(false)}>
