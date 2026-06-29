@@ -18,7 +18,16 @@ const shortRank = (rank: Rank): string =>
 
 const PIVOT: Rank = 7
 
-function SuitRow({ suit, pile }: { suit: Suit; pile: readonly Rank[] }) {
+function SuitRow({
+  suit,
+  pile,
+  hideCardId,
+}: {
+  suit: Suit
+  pile: readonly Rank[]
+  /** 出す演出中、着地まで隠す札の id（`${suit}${rank}`＝cardId 形式）。 */
+  hideCardId?: string | null
+}) {
   const placed = new Set<number>(pile)
   const color = isRedSuit(suit) ? 'text-red-600' : 'text-gray-100'
 
@@ -30,7 +39,12 @@ function SuitRow({ suit, pile }: { suit: Suit; pile: readonly Rank[] }) {
       </div>
       <div className="flex items-center gap-1">
         {RANKS.map((rank) => {
+          const slot = `${suit}${rank}` // cardId と同形式（例: d7）
           if (placed.has(rank)) {
+            // 飛行アニメ中の札は着地まで隠す（同サイズの透明枠でレイアウト維持）。
+            if (slot === hideCardId) {
+              return <div key={rank} aria-hidden className="h-[90px] w-16" />
+            }
             return <Card key={rank} card={{ suit, rank }} size="bd" />
           }
           const isPivot = rank === PIVOT
@@ -38,6 +52,7 @@ function SuitRow({ suit, pile }: { suit: Suit; pile: readonly Rank[] }) {
             <div
               key={rank}
               aria-hidden
+              data-board-slot={slot}
               className={`flex h-[90px] w-16 items-center justify-center rounded-lg border-2 border-dashed text-base font-bold ${
                 isPivot ? 'border-yellow-400/80 text-yellow-300' : 'border-white/20 text-white/30'
               }`}
@@ -51,14 +66,21 @@ function SuitRow({ suit, pile }: { suit: Suit; pile: readonly Rank[] }) {
   )
 }
 
-export default function Board({ board }: { board: BoardState }) {
+export default function Board({
+  board,
+  hideCardId,
+}: {
+  board: BoardState
+  /** 出す演出中、着地まで盤面で隠す札の id（cardId）。 */
+  hideCardId?: string | null
+}) {
   return (
     <div className="overflow-x-auto rounded-2xl bg-green-900/40 p-3">
       {/* 中身は自然な幅（w-max）のまま、背景ボックス内で中央寄せ（mx-auto）。
           画面が狭く収まらないときは overflow-x-auto で横スクロールに切り替わる。 */}
       <div className="mx-auto flex w-max flex-col gap-2">
         {SUITS.map((suit) => (
-          <SuitRow key={suit} suit={suit} pile={board[suit]} />
+          <SuitRow key={suit} suit={suit} pile={board[suit]} hideCardId={hideCardId} />
         ))}
       </div>
     </div>

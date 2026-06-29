@@ -58,6 +58,8 @@ export default function Card({
       alt={alt}
       draggable={false}
       onClick={onClick}
+      // 出す演出（手元→置き場の飛行）で位置採寸するための識別子。表向きのときのみ。
+      data-card-id={card ? cardId(card) : undefined}
       className={classes}
     />
   )

@@ -9,6 +9,7 @@
  * 下=手札＋操作バー。プレゼン部品（Board/HandCards/ActionButtons/OpponentArea/Avatar）を組む。
  */
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { currentPlayer } from "@/lib/sevens/state";
@@ -40,6 +41,65 @@ function Centered({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * 出す演出：手元のカードを置き場まで飛ばすゴーストカード（最前面・操作不可）。
+ * 採寸済みの from/to 矩形の間を transform で動かす（手札 lg → 盤面 bd へ縮小）。
+ * 着地（transitionend）またはフォールバックタイマで onDone を呼ぶ。
+ */
+function FlyingCard({
+  card,
+  from,
+  to,
+  onDone,
+}: {
+  card: Card;
+  from: DOMRect;
+  to: DOMRect;
+  onDone: () => void;
+}) {
+  const [moved, setMoved] = useState(false);
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setMoved(true));
+    // transitionend を取りこぼしても必ず後始末する保険（トランジション長＋余裕）。
+    const timer = setTimeout(onDone, 760);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(timer);
+    };
+  }, [onDone]);
+
+  const dx = to.left - from.left;
+  const dy = to.top - from.top;
+  const scale = to.width / from.width;
+
+  return createPortal(
+    // eslint-disable-next-line @next/next/no-img-element -- SVGは最適化不要
+    <img
+      src={`/cards/${cardId(card)}.svg`}
+      alt=""
+      aria-hidden
+      onTransitionEnd={onDone}
+      style={{
+        position: "fixed",
+        left: from.left,
+        top: from.top,
+        width: from.width,
+        height: from.height,
+        transform: moved
+          ? `translate(${dx}px, ${dy}px) scale(${scale})`
+          : "translate(0, 0) scale(1)",
+        transformOrigin: "top left",
+        transition: "transform 520ms cubic-bezier(0.22, 1, 0.36, 1)",
+        zIndex: 60,
+        pointerEvents: "none",
+        willChange: "transform",
+      }}
+      className="rounded-lg bg-white shadow-2xl"
+    />,
+    document.body,
+  );
+}
+
 export function GameBoard({ roomId }: { roomId: string }) {
   const router = useRouter();
   useGameConnection(); // 接続維持（タイトル→対局のクライアント遷移で切らない）
@@ -56,6 +116,9 @@ export function GameBoard({ roomId }: { roomId: string }) {
   const [passWarnOpen, setPassWarnOpen] = useState(false);
   const [playConfirmOpen, setPlayConfirmOpen] = useState(false);
   const [paused, setPaused] = useState(false);
+  // 出す演出（手元→置き場の飛行）。flying=ゴースト、hideCardId=着地まで盤面で隠す札。
+  const [flying, setFlying] = useState<{ card: Card; from: DOMRect; to: DOMRect } | null>(null);
+  const [hideCardId, setHideCardId] = useState<string | null>(null);
 
   // 席 → PlayerInfo の引き当て（OpponentArea へ接続/CPU 情報を渡す）。
   const infoBySeat = useMemo(() => {
@@ -93,6 +156,8 @@ export function GameBoard({ roomId }: { roomId: string }) {
     if (phase === "playing") {
       setSelected(null);
       setPaused(false);
+      setFlying(null);
+      setHideCardId(null);
     }
   }, [phase]);
 
@@ -146,7 +211,20 @@ export function GameBoard({ roomId }: { roomId: string }) {
 
   const doPlay = () => {
     if (!selected || !isPlayable(selected, gameState.board)) return;
-    send({ type: "play", card: selected });
+    const card = selected;
+    const id = cardId(card);
+    // 出す前に手札カードと置き場スロットの位置を採寸し、その間を飛ばす（採れなければ演出なし）。
+    const fromEl = document.querySelector(`[data-card-id="${id}"]`);
+    const toEl = document.querySelector(`[data-board-slot="${id}"]`);
+    if (fromEl && toEl) {
+      setFlying({
+        card,
+        from: fromEl.getBoundingClientRect(),
+        to: toEl.getBoundingClientRect(),
+      });
+      setHideCardId(id); // 着地まで盤面の本物は隠す（二重表示防止）。
+    }
+    send({ type: "play", card });
     setSelected(null);
     setPlayConfirmOpen(false);
   };
@@ -199,7 +277,7 @@ export function GameBoard({ roomId }: { roomId: string }) {
           infoBySeat={infoBySeat}
         />
 
-        <Board board={gameState.board} />
+        <Board board={gameState.board} hideCardId={hideCardId} />
 
         {ended ? (
           <ResultScreen
@@ -278,6 +356,18 @@ export function GameBoard({ roomId }: { roomId: string }) {
       >
         {selected && <CardView card={selected} size="lg" />}
       </ConfirmDialog>
+
+      {flying && (
+        <FlyingCard
+          card={flying.card}
+          from={flying.from}
+          to={flying.to}
+          onDone={() => {
+            setFlying(null);
+            setHideCardId(null);
+          }}
+        />
+      )}
     </ScreenContainer>
   );
 }
