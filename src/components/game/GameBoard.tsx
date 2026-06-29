@@ -19,8 +19,7 @@ import { useGameConnection } from "@/lib/store/useGameConnection";
 import { useGameStore } from "@/lib/store/gameStore";
 import { useHelpStore } from "@/lib/store/helpStore";
 import { useAudioEffects } from "@/lib/audio/useAudioEffects";
-import { AudioControls } from "@/components/audio";
-import { HelpToggle, PassWarningDialog, TurnBanner } from "@/components/help";
+import { PassWarningDialog, TurnBanner } from "@/components/help";
 import { Button, ConfirmDialog, Heading, ScreenContainer } from "@/components/ui";
 import Board from "./Board";
 import CardView from "./Card";
@@ -52,6 +51,7 @@ export function GameBoard({ roomId }: { roomId: string }) {
   const dissolved = useGameStore((s) => s.dissolved);
   const send = useGameStore((s) => s.send);
   const helpMode = useHelpStore((s) => s.helpMode);
+  const hydrateHelp = useHelpStore((s) => s.hydrate);
   const [selected, setSelected] = useState<Card | null>(null);
   const [passWarnOpen, setPassWarnOpen] = useState(false);
   const [playConfirmOpen, setPlayConfirmOpen] = useState(false);
@@ -62,6 +62,12 @@ export function GameBoard({ roomId }: { roomId: string }) {
     const map = new Map<number, PlayerInfo>(players.map((p) => [p.seat, p]));
     return (seat: number) => map.get(seat);
   }, [players]);
+
+  // お助けモードの保存値を復元（トグルUIはメニュー内＝常時マウントではないため、
+  // 常時マウントの本コンポーネントで hydrate しておく）。
+  useEffect(() => {
+    hydrateHelp();
+  }, [hydrateHelp]);
 
   const isMyTurn = gameState?.phase === "playing" && gameState.currentSeat === mySeat;
   // 自分の手番でなくなったら「待って」を自動解除。
@@ -164,10 +170,19 @@ export function GameBoard({ roomId }: { roomId: string }) {
   const showActionBar = isMyTurn && human.status === "playing" && !paused && !ended;
 
   return (
-    <ScreenContainer showRotateHint className="bg-green-800 text-white">
+    <ScreenContainer showRotateHint wide className="bg-green-800 text-white">
+      {/* メニュー（お助け・音・退室を内包）は左上に小さく浮かせ、ヘッダー帯を無くす。
+          空いた縦ぶんメンバー・場を上に詰め、場（盤面）を大きく見せる（生徒さんプレイのFB対応）。 */}
+      <div className="fixed left-3 top-3 z-40 flex items-center gap-2">
+        <GameMenu onBackToTitle={backToTitle} />
+        <span className="hidden rounded-lg bg-green-900/70 px-2 py-1 text-base font-bold text-white sm:inline">
+          7並べ
+        </span>
+      </div>
+
       <div
         data-room-id={roomId}
-        className={`mx-auto flex max-w-6xl flex-col gap-4 ${showActionBar ? "pb-28" : ""}`}
+        className={`mx-auto flex max-w-6xl flex-col gap-3 ${showActionBar ? "pb-28" : ""}`}
       >
         {connection !== "connected" && (
           <p
@@ -177,17 +192,6 @@ export function GameBoard({ roomId }: { roomId: string }) {
             通信が切れました。再接続しています…
           </p>
         )}
-
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <GameMenu onBackToTitle={backToTitle} />
-            <h1 className="text-2xl font-bold">7並べ</h1>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <HelpToggle />
-            <AudioControls />
-          </div>
-        </div>
 
         <OpponentArea
           players={opponents}

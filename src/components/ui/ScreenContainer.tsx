@@ -10,12 +10,15 @@ export interface ScreenContainerProps {
   children: ReactNode;
   /** 縦持ち時に「横にしてください」ヒントを表示する（既定 false）。対局画面で使う想定。 */
   showRotateHint?: boolean;
+  /** 横幅上限を広げる（max-w-7xl）。場を大きく見せたい対局画面で使う。 */
+  wide?: boolean;
 }
 
 export function ScreenContainer({
   className,
   children,
   showRotateHint = false,
+  wide = false,
 }: ScreenContainerProps) {
   return (
     <div className={cn("min-h-dvh w-full bg-background text-foreground", className)}>
@@ -27,7 +30,14 @@ export function ScreenContainer({
           画面を横にすると見やすくなります
         </p>
       )}
-      <div className="mx-auto w-full max-w-5xl px-4 py-6 landscape:px-8">{children}</div>
+      <div
+        className={cn(
+          "mx-auto w-full px-4 py-6 landscape:px-8",
+          wide ? "max-w-7xl" : "max-w-5xl",
+        )}
+      >
+        {children}
+      </div>
     </div>
   );
 }

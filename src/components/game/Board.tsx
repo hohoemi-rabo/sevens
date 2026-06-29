@@ -31,14 +31,14 @@ function SuitRow({ suit, pile }: { suit: Suit; pile: readonly Rank[] }) {
       <div className="flex items-center gap-1">
         {RANKS.map((rank) => {
           if (placed.has(rank)) {
-            return <Card key={rank} card={{ suit, rank }} size="sm" />
+            return <Card key={rank} card={{ suit, rank }} size="bd" />
           }
           const isPivot = rank === PIVOT
           return (
             <div
               key={rank}
               aria-hidden
-              className={`flex h-[67px] w-12 items-center justify-center rounded-lg border-2 border-dashed text-sm font-bold ${
+              className={`flex h-[90px] w-16 items-center justify-center rounded-lg border-2 border-dashed text-base font-bold ${
                 isPivot ? 'border-yellow-400/80 text-yellow-300' : 'border-white/20 text-white/30'
               }`}
             >
@@ -53,8 +53,10 @@ function SuitRow({ suit, pile }: { suit: Suit; pile: readonly Rank[] }) {
 
 export default function Board({ board }: { board: BoardState }) {
   return (
-    <div className="overflow-x-auto rounded-2xl bg-green-900/40 p-4">
-      <div className="flex min-w-max flex-col gap-2">
+    <div className="overflow-x-auto rounded-2xl bg-green-900/40 p-3">
+      {/* 中身は自然な幅（w-max）のまま、背景ボックス内で中央寄せ（mx-auto）。
+          画面が狭く収まらないときは overflow-x-auto で横スクロールに切り替わる。 */}
+      <div className="mx-auto flex w-max flex-col gap-2">
         {SUITS.map((suit) => (
           <SuitRow key={suit} suit={suit} pile={board[suit]} />
         ))}

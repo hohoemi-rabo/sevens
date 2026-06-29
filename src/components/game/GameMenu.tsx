@@ -1,12 +1,15 @@
 "use client";
 
 // 左上メニュー（docs/16・REQUIREMENTS 4.1）。
-// 「トップへ戻る」をまとめる。出す前の確認は手札タップ時の中央ポップアップに
-// 一本化したため（生徒さんプレイのFB対応）、ここに確認トグルは持たない。
+// お助けモード切替・音量/ミュート・「トップへ戻る」をまとめる。お助け/音を
+// ここへ集約してヘッダー帯を無くし、空いた縦ぶん場を大きく見せる（生徒さんプレイのFB対応）。
+// 出す前の確認は手札タップ時の中央ポップアップに一本化したため、確認トグルは持たない。
 // シニア配慮: 大きなボタン・高コントラスト。背景クリック/Escで閉じる軽量オーバーレイ。
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui";
+import { HelpToggle } from "@/components/help";
+import { AudioControls } from "@/components/audio";
 
 export interface GameMenuProps {
   /** 「トップへ戻る」。退室＝接続切断＋遷移（呼び出し側で実施）。 */
@@ -53,6 +56,19 @@ export function GameMenu({ onBackToTitle }: GameMenuProps) {
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="text-xl font-bold">メニュー</h2>
+
+            <div className="mt-5 flex flex-col gap-4">
+              <div className="flex items-center justify-between gap-3 rounded-xl border-2 border-gray-200 p-3">
+                <span className="text-base font-bold">お助けモード</span>
+                <HelpToggle />
+              </div>
+              <div className="rounded-xl border-2 border-gray-200 p-3">
+                <span className="text-base font-bold">音</span>
+                <div className="mt-2 flex justify-center">
+                  <AudioControls />
+                </div>
+              </div>
+            </div>
 
             <div className="mt-6 flex flex-col gap-3">
               <Button variant="secondary" size="lg" onClick={() => setOpen(false)}>
