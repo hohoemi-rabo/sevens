@@ -9,7 +9,6 @@ import { useEffect, useRef } from "react";
 import { useGameStore } from "@/lib/store/gameStore";
 import { useAudioStore } from "@/lib/store/audioStore";
 import type { GameState } from "@/lib/sevens/state";
-import { cardSpeech } from "@/lib/sevens/cards";
 import { diffGameState, type AudioEvent } from "@/lib/audio/events";
 import { playSfx, type SfxName } from "@/lib/audio/sfx";
 import { speak } from "@/lib/audio/speech";
@@ -27,9 +26,6 @@ const SFX_FOR: Partial<Record<AudioEvent["kind"], SfxName>> = {
 
 function announce(event: AudioEvent, volume: number): void {
   switch (event.kind) {
-    case "play":
-      speak(cardSpeech(event.card), { volume });
-      break;
     case "pass":
       speak("パス", { volume });
       break;
@@ -39,7 +35,8 @@ function announce(event: AudioEvent, volume: number): void {
     case "eliminated":
       speak("残念！", { volume });
       break;
-    // deal / end は効果音のみ（読み上げ無し）
+    // play は効果音のみ（カード名の読み上げは不要との要望で削除）。
+    // deal / end も効果音のみ（読み上げ無し）。
   }
 }
 
