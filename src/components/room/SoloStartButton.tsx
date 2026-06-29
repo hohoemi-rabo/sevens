@@ -24,7 +24,7 @@ export function SoloStartButton() {
       await useGameStore.getState().start({
         fillWithCpu: true,
         maxPass: 3,
-        startMode: "diamond7",
+        startMode: "all7", // シニア向けに分かりやすい「7を全部並べてスタート」を既定に
         cpuStrength: "weak",
       });
       if (useGameStore.getState().lastError) setStarting(false);

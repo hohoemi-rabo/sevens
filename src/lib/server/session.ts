@@ -43,7 +43,7 @@ const err = (code: AdapterErrorCode): Err => ({ ok: false, error: { code, messag
 
 const SEATS: readonly Seat[] = [0, 1, 2, 3];
 const DEFAULT_MAX_PASS = 3;
-const DEFAULT_START_MODE: StartMode = "diamond7";
+const DEFAULT_START_MODE: StartMode = "all7"; // シニア向け既定（7を全部並べてスタート）
 const DEFAULT_CPU: CpuStrength = "weak";
 // CPU席の名前（GameTable.tsx のキャラ名を踏襲）。席順に割り当てる。
 const CPU_NAMES = ["りつこ", "ハジメ", "ミミ", "サブ"] as const;

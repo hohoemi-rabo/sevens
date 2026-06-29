@@ -55,7 +55,7 @@ export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "er
 export interface StartOptions {
   readonly seed?: number;
   readonly maxPass?: number; // 1..5（既定3）
-  readonly startMode?: StartMode; // 'diamond7' | 'all7'（既定 'diamond7'）
+  readonly startMode?: StartMode; // 'diamond7' | 'all7'（既定 'all7'）
   readonly fillWithCpu?: boolean;
   readonly cpuStrength?: CpuStrength; // 'weak'|'medium'|'strong'（既定 'weak'）
 }

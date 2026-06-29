@@ -44,7 +44,7 @@ export function HostLobby() {
     await useGameStore.getState().start({
       fillWithCpu: true,
       maxPass,
-      startMode: "diamond7",
+      startMode: "all7", // シニア向けに分かりやすい「7を全部並べてスタート」を既定に
       cpuStrength,
     });
     if (useGameStore.getState().lastError) setStarting(false);
