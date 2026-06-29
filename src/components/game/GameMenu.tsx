@@ -9,7 +9,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui";
 import { HelpToggle } from "@/components/help";
-import { AudioControls } from "@/components/audio";
+import { AudioControls, BgmControls } from "@/components/audio";
 
 export interface GameMenuProps {
   /** 「トップへ戻る」。退室＝接続切断＋遷移（呼び出し側で実施）。 */
@@ -66,6 +66,12 @@ export function GameMenu({ onBackToTitle }: GameMenuProps) {
                 <span className="text-base font-bold">音</span>
                 <div className="mt-2 flex justify-center">
                   <AudioControls />
+                </div>
+              </div>
+              <div className="rounded-xl border-2 border-gray-200 p-3">
+                <span className="text-base font-bold">BGM（音楽）</span>
+                <div className="mt-2 flex justify-center">
+                  <BgmControls />
                 </div>
               </div>
             </div>

@@ -20,6 +20,7 @@ import { useGameConnection } from "@/lib/store/useGameConnection";
 import { useGameStore } from "@/lib/store/gameStore";
 import { useHelpStore } from "@/lib/store/helpStore";
 import { useAudioEffects } from "@/lib/audio/useAudioEffects";
+import { useBgm } from "@/lib/audio/useBgm";
 import { PassWarningDialog, TurnBanner } from "@/components/help";
 import { Button, ConfirmDialog, Heading, ScreenContainer } from "@/components/ui";
 import Board from "./Board";
@@ -104,6 +105,7 @@ export function GameBoard({ roomId }: { roomId: string }) {
   const router = useRouter();
   useGameConnection(); // 接続維持（タイトル→対局のクライアント遷移で切らない）
   useAudioEffects(); // ゲームイベントを効果音・読み上げにひも付け（#14）
+  useBgm(); // BGM（対局中のみ・既定OFF・端末ごとにメニューでON）
   const gameState = useGameStore((s) => s.gameState);
   const mySeat = useGameStore((s) => s.mySeat);
   const connection = useGameStore((s) => s.connection);

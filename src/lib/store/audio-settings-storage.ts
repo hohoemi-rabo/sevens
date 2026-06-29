@@ -4,12 +4,21 @@
 // SSR / 非ブラウザ（vitest node）では sessionStorage が無いので no-op。
 
 export interface AudioSettings {
-  /** 0..1。デフォルト中音量 = 0.5。 */
+  /** 効果音・読み上げの音量。0..1。デフォルト中音量 = 0.5。 */
   volume: number;
   muted: boolean;
+  /** BGM の ON/OFF（端末ごと・既定OFF＝全端末重なり/自動再生制限の回避）。 */
+  bgmEnabled: boolean;
+  /** BGM 音量。0..1。効果音とは別系統で控えめ既定（= 0.3）。 */
+  bgmVolume: number;
 }
 
-export const DEFAULT_AUDIO_SETTINGS: AudioSettings = { volume: 0.5, muted: false };
+export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
+  volume: 0.5,
+  muted: false,
+  bgmEnabled: false,
+  bgmVolume: 0.3,
+};
 
 const KEY = "sevens:audio";
 
@@ -39,8 +48,17 @@ export function loadAudioSettings(): AudioSettings {
       typeof (v as AudioSettings).volume === "number" &&
       typeof (v as AudioSettings).muted === "boolean"
     ) {
-      const volume = Math.min(1, Math.max(0, (v as AudioSettings).volume));
-      return { volume, muted: (v as AudioSettings).muted };
+      const o = v as Partial<AudioSettings>;
+      const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+      // BGM 項目は後付けのため、無い/不正な保存値はデフォルトに倒す（後方互換）。
+      return {
+        volume: clamp01(o.volume as number),
+        muted: o.muted as boolean,
+        bgmEnabled:
+          typeof o.bgmEnabled === "boolean" ? o.bgmEnabled : DEFAULT_AUDIO_SETTINGS.bgmEnabled,
+        bgmVolume:
+          typeof o.bgmVolume === "number" ? clamp01(o.bgmVolume) : DEFAULT_AUDIO_SETTINGS.bgmVolume,
+      };
     }
     return DEFAULT_AUDIO_SETTINGS;
   } catch {
