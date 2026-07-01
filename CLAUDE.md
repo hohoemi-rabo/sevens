@@ -102,7 +102,7 @@ npm run avatars:generate # プレイヤーアバターSVG 4枚を public/avatars
 | `room:create` / `room:join` | ack 付き emit | C→S | req `{name}` / `{passcode,name}`、ack `SeatAssignment`\|`AdapterError` |
 | `room:reconnect` | ack 付き emit（#13） | C→S | req `{roomId,seat,token}` |
 | `room:players` | broadcast | S→C | `PlayerInfo[]` |
-| `game:start` | ack 付き emit（host限定） | C→S | req `{opts?: {seed,maxPass,startMode,fillWithCpu,cpuStrength}}` |
+| `game:start` | ack 付き emit（host限定） | C→S | req `{opts?: {seed,maxPass,startMode,wrapAround,fillWithCpu,cpuStrength}}` |
 | `game:rematch` | ack 付き emit（host限定・#17） | C→S | req `{}`（同席/同設定/新seedで再配札） |
 | `room:dissolve` | ack 付き emit（host限定・#17） | C→S | req `{}` |
 | `room:dissolved` | broadcast（#17） | S→C | （なし。全員トップへ） |
@@ -117,7 +117,7 @@ npm run avatars:generate # プレイヤーアバターSVG 4枚を public/avatars
 ## ゲームルールの要点（実装時の注意）
 
 - トランプ52枚（ジョーカーなし）を4人で均等配分（各13枚）。CPUで4人を埋める
-- ♦7からスタート、7を起点に各スート両方向（8→K / 6→A）へ伸ばす。開始方式は `diamond7`（♦7のみ）/ `all7`（各スートの7）を `StartMode` で切替（`board.ts`）
+- ♦7からスタート、7を起点に各スート両方向（8→K / 6→A）へ伸ばす。開始方式は `diamond7`（♦7のみ）/ `all7`（各スートの7）を `StartMode` で切替（`board.ts`）。**標準では K と A は反対の端どうしでつながらない**。ホスト設定で **A-Kループ（ローカルルール・`wrapAround`）** をONにすると A(1) と K(13) を隣接扱い＝各スートを13枚の輪とみなす（既定OFF＝標準・プレイテスト反映⑧）
 - **パス回数はホストが部屋作成時に設定（1〜5回、または「無制限」）**。有限は超過で手札を全て場に出して**脱落**。**無制限（`maxPass=0`）は脱落なし**＝全員が上がるまで続く（プレイテスト反映⑦）
 - 順位は1〜4位＋脱落を明示。全員が上がるか脱落するまで継続
 - **お助けモード**（デフォルトON、トグル切替）: 出せる札ハイライト、出せる札があるのにパスする際の警告ダイアログ、残りパス回数強調、ターン通知（判定は `pass.ts` の `isWastefulPass` 等で公開済み）
@@ -145,6 +145,7 @@ npm run avatars:generate # プレイヤーアバターSVG 4枚を public/avatars
 - **プレイテスト反映⑤: 出す演出を相手＋配札へ拡張（2026-06）**: 自分の出札（手札→置き場）に加え、①**相手の出札**＝`diffGameState` の `play`（`seat`≠自分）を検知し、相手エリア（`OpponentArea` の `data-opponent-seat`）中央 → 置き場スロットへ盤面サイズで並進。②**開始時の7並べ**＝`deal` イベントで場の7たちを少し上から **110ms ずつずらしてドロップ**（`all7` なら4枚）。実装は `GameBoard` を**複数同時対応**にリファクタ：単一 `flying`/`hideCardId` → 配列 `flyers: Flyer[]`（cardId キー）＋派生 `hiddenIds: Set`。`Board` の隠し札も `hideCardId?:string` → `hiddenIds?:ReadonlySet<string>`。`FlyingCard` に `delay`（配札のスタガー）を追加。**ちらつき防止**に `useIsoLayoutEffect`（描画前に採寸→隠す。SSRは `useEffect`）を使い、相手/配札の差分検出は **音(`useAudioEffects`)とは別系統**の `animPrevRef` で行う（自分の出札は従来どおり `doPlay` 内で採寸）。CPU 着手間隔(0.8〜1.8s) > アニメ(520ms) ゆえ重ならない。脱落の一括放出は `eliminated` 扱いで `play` 検出されない（大量カードは飛ばない）。再接続・途中復帰（`prev===null` かつ非fresh）では誤発火しない
 - **プレイテスト反映⑥: 短い画面（15型ノート）の縦圧縮＝高さレスポンシブ（2026-07）**: 「自分の出札アニメが**一旦上へ飛んで置く**ように見える」FBの原因は、場拡大で対局画面が縦に長くなり（≈1000px）、15型ノート（使える高さ≈650px）で**縦スクロールが必要**＝手札を見ていると置き場が画面外上にあるため（アニメ自体は正しく手札→置き場に飛んでいる）。対応は**高さブレークポイント `tall`（`raw: (min-height: 800px)`／`tailwind.config.ts`）**を追加し、**既定＝短い画面向けにコンパクト／`tall:`＝背の高い画面向けに大きく**に切替（＝出す演出が画面内に収まる）。具体: 場カード `bd` を `w-12 h-[67px] tall:w-16 tall:h-[90px]`（48×67↔64×90）、`Board` の空きスロット/隠し枠/文字/スート記号/余白/gap を `tall:` で拡大、`OpponentArea` は**短い画面＝横並びコンパクト**（裏向きカード省略・残パスをインライン）／`tall:`＝従来の縦カード、`GameBoard` の `gap`/`pb`/パネル `p` も `tall:` で拡大。手札は主操作ゆえ `lg` 据え置き（タップ60px維持）。縦は約1000→約720pxに圧縮。アニメのロジックは不変（採寸は実サイズ＝レンダー後 rect を見るので自動追従）。大画面は見た目そのまま
 - **プレイテスト反映⑦: パス「無制限」オプション追加（2026-07）**: ホストのパス設定に**「無制限（脱落なし）」**を追加＝シニア向けに知らない人が脱落しない優しいモード。**表現**は `maxPass=0` をセンチネル（`UNLIMITED_PASS`／`isUnlimitedPass`＝`pass.ts`。JSON安全ゆえ Infinity は使わない）。`isValidMaxPass` は `1..5 または 0` を許可。`willEliminateOnPass(player, maxPass)` に**引数追加**（無制限は常に false）、`pass()` は無制限では**残数を減らさず脱落もしない**（passesLeft は `maxPass=0` で初期化されそのまま）。**膠着（デッドロック）対策が要点**: 「強」CPU（`strong.ts`）は `passesLeft>=2` で戦略的にパス（温存）するので、無制限だと出せる手を持っても永遠に温存し終局しない恐れ→**温存条件に `!isUnlimitedPass(state.maxPass)` を追加**（弱・中は元から出せる手を必ず出す）。7並べは「場のフロンティア札は必ず誰かの手にある＝常に少なくとも1人は出せる」ので、全員が出せる手を出せば必ず終局する（`strong.test.ts` で全員強×無制限×all7 が全員上がりで終局することを機械保証）。**UI**は残パス表示を「無制限／∞」に（`TurnBanner`/`ActionButtons`/`OpponentArea` に `unlimitedPass` prop）、`HostLobby` に「無制限」ボタン＋説明。`GameBoard` が `isUnlimitedPass(gameState.maxPass)` を配線
+- **プレイテスト反映⑧: A-Kループ（ローカルルール）追加（2026-07）**: 「K を置いたら A から、A を置いたら K から続けられる」変則ルールに対応＝各スートを **13枚の輪**とみなし A(1) と K(13) を隣接扱いにする。**絶対ルールではない**ため**ホスト選択トグル（既定OFF＝標準）**。状態は `GameState.wrapAround: boolean`（`InitGameOptions.wrapAround?`／`StartOptions.wrapAround?`／`RoomStore.Room.wrapAround`＝rematch で引き継ぎ）。**判定は `board.ts` に集約**: `canPlace(board, card, wrapAround=false)` に第3引数を追加し、ON時は7を含む連続弧の両端を**巡回（`cyclicUp`/`cyclicDown`＝K→A・A→K）**で求めて端±1を許可（`size>=13` は満了で不可＝無限ループ回避）。`place`/`isPlayable`/`playableCards`/`hasPlayable` も同じ第3引数を透過（既定 false＝標準なので既存呼び出しは無改修）。**呼び出し側は GameState がある所で `state.wrapAround` を渡す**: `state.playCard`、`pass.isWastefulPass`、CPU（`weak`/`medium`/`strong`＋`heuristics.opponentGain`）、UI（`GameBoard`→`isPlayable`/`hasPlayable`/`canPlay`、`HandCards` に `wrapAround` prop）。**膠着対策**: ⑦の終局保証（フロンティア札は必ず誰かの手にある）は輪でも成立するが、念のため `strong.test.ts` に**全員強×無制限×A-Kループ×all7 が全員上がりで終局**するテストを追加。盤面表示（`Board.tsx`）は A〜K 13列固定のままで変更不要（端の出せる札ハイライトは `HandCards` 側）。UI は `HostLobby` に「A・K をつなげる（なし／つなげる）」トグル＋説明。`SoloStartButton`（ひとりで遊ぶ）は標準のまま（`wrapAround` 省略）。テスト: `board.test.ts`（K→A/A→K/満了/標準では不可）、`state.test.ts`（playCard がフラグ準拠）、`session.test.ts`（start 反映・rematch 引き継ぎ）
 
 ## Next.js App Router ベストプラクティス（15.5系）
 

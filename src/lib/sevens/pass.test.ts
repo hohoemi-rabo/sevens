@@ -56,6 +56,7 @@ describe('isWastefulPass', () => {
     phase: 'playing',
     startMode: 'diamond7',
     maxPass: 3,
+    wrapAround: false,
   })
 
   it('出せる札があるのにパスは無駄パス', () => {

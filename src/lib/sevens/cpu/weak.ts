@@ -12,7 +12,7 @@ export const decideWeak: CpuStrategy = (state, playerId) => {
   if (!player) {
     throw new Error(`No player with id ${playerId}`)
   }
-  const options = playableCards(player.hand, state.board)
+  const options = playableCards(player.hand, state.board, state.wrapAround)
   return options.length > 0
     ? { type: 'play', card: options[0] }
     : { type: 'pass' }

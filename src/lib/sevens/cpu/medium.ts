@@ -14,7 +14,7 @@ export const decideMedium: CpuStrategy = (state, playerId) => {
   if (!player) {
     throw new Error(`No player with id ${playerId}`)
   }
-  const options = playableCards(player.hand, state.board)
+  const options = playableCards(player.hand, state.board, state.wrapAround)
   if (options.length === 0) return { type: 'pass' }
 
   // 最も外側の札を出す（centrality 最小）。同点は cardId で決定論的に。

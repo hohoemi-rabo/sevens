@@ -12,6 +12,8 @@ import Card from './Card'
 export interface HandCardsProps {
   hand: CardType[]
   board: BoardState
+  /** A-Kループ（ローカルルール）が有効か。出せる札の判定に使う。 */
+  wrapAround?: boolean
   selectedId: string | null
   onSelect: (card: CardType) => void
   /** 自分の手番でないときは選択・ハイライトを無効化する。 */
@@ -36,12 +38,13 @@ function sortHand(hand: CardType[]): CardType[] {
 export default function HandCards({
   hand,
   board,
+  wrapAround = false,
   selectedId,
   onSelect,
   disabled = false,
   helpMode = true,
 }: HandCardsProps) {
-  const playableIds = new Set(playableCards(hand, board).map(cardId))
+  const playableIds = new Set(playableCards(hand, board, wrapAround).map(cardId))
 
   return (
     <div className="flex flex-wrap items-end justify-center gap-2">

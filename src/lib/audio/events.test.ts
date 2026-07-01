@@ -24,6 +24,7 @@ function state(over: Partial<GameState>): GameState {
     phase: over.phase ?? 'playing',
     startMode: over.startMode ?? 'diamond7',
     maxPass: over.maxPass ?? 3,
+    wrapAround: over.wrapAround ?? false,
     ...over,
   }
 }

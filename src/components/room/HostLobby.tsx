@@ -28,6 +28,7 @@ export function HostLobby() {
   const info = useServerInfo();
   const [maxPass, setMaxPass] = useState(3);
   const [cpuStrength, setCpuStrength] = useState<CpuStrength>("weak");
+  const [wrapAround, setWrapAround] = useState(false);
   const [starting, setStarting] = useState(false);
 
   // 他端末が開く入室URL（同一オリジンで繋がるよう、ホストのLAN URLを使う）。
@@ -45,6 +46,7 @@ export function HostLobby() {
       fillWithCpu: true,
       maxPass,
       startMode: "all7", // シニア向けに分かりやすい「7を全部並べてスタート」を既定に
+      wrapAround,
       cpuStrength,
     });
     if (useGameStore.getState().lastError) setStarting(false);
@@ -113,6 +115,32 @@ export function HostLobby() {
         {maxPass === UNLIMITED_PASS && (
           <span className="text-sm text-gray-500">脱落なし。全員が上がるまで続きます。</span>
         )}
+      </div>
+
+      {/* A-Kループ（ローカルルール） */}
+      <div className="flex flex-col items-center gap-2">
+        <span className="text-base">A・K をつなげる（ローカルルール）</span>
+        <div className="flex gap-2">
+          <Button
+            variant={!wrapAround ? "primary" : "secondary"}
+            size="default"
+            onClick={() => setWrapAround(false)}
+          >
+            なし（標準）
+          </Button>
+          <Button
+            variant={wrapAround ? "primary" : "secondary"}
+            size="default"
+            onClick={() => setWrapAround(true)}
+          >
+            つなげる
+          </Button>
+        </div>
+        <span className="max-w-xs text-center text-sm text-gray-500">
+          {wrapAround
+            ? "K の次に A、A の次に K を出せます（一周でつながる）。"
+            : "K と A は反対の端どうしでつながりません。"}
+        </span>
       </div>
 
       {/* CPUの強さ */}

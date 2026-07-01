@@ -29,6 +29,7 @@ function scenario(hands: Card[][], maxPass: number): GameState {
     phase: 'playing',
     startMode: 'diamond7',
     maxPass,
+    wrapAround: false,
   }
 }
 

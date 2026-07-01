@@ -44,5 +44,5 @@ export function willEliminateOnPass(player: Player, maxPass: number): boolean {
  */
 export function isWastefulPass(state: GameState, playerId: string): boolean {
   const player = state.players.find((p) => p.id === playerId)
-  return !!player && hasPlayable(player.hand, state.board)
+  return !!player && hasPlayable(player.hand, state.board, state.wrapAround)
 }

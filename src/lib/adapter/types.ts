@@ -56,6 +56,7 @@ export interface StartOptions {
   readonly seed?: number;
   readonly maxPass?: number; // 1..5（既定3）／0=無制限（脱落なし）
   readonly startMode?: StartMode; // 'diamond7' | 'all7'（既定 'all7'）
+  readonly wrapAround?: boolean; // A-Kループ（ローカルルール）。既定 false=標準
   readonly fillWithCpu?: boolean;
   readonly cpuStrength?: CpuStrength; // 'weak'|'medium'|'strong'（既定 'weak'）
 }

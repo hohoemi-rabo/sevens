@@ -9,14 +9,17 @@ import {
   type GameState,
   type Player,
 } from './state'
-import { initBoard } from './board'
+import { initBoard, type BoardState } from './board'
 import { cardId, type Card } from './cards'
 import { seededRng } from './deal'
 
 const c = (suit: Card['suit'], rank: Card['rank']): Card => ({ suit, rank })
 
 /** 手番進行系を決定論的に試すための手作りステート（配札に依存しない）。 */
-function makeState(hands: Card[][], opts?: { maxPass?: number; currentSeat?: number }): GameState {
+function makeState(
+  hands: Card[][],
+  opts?: { maxPass?: number; currentSeat?: number; board?: BoardState; wrapAround?: boolean },
+): GameState {
   const maxPass = opts?.maxPass ?? 3
   const players: Player[] = hands.map((hand, seat) => ({
     id: `p${seat}`,
@@ -28,11 +31,12 @@ function makeState(hands: Card[][], opts?: { maxPass?: number; currentSeat?: num
   }))
   return {
     players,
-    board: initBoard('diamond7'),
+    board: opts?.board ?? initBoard('diamond7'),
     currentSeat: opts?.currentSeat ?? 0,
     phase: 'playing',
     startMode: 'diamond7',
     maxPass,
+    wrapAround: opts?.wrapAround ?? false,
   }
 }
 
@@ -204,6 +208,21 @@ describe('playCard', () => {
     expect(afterP1.players[1].status).toBe('finished')
     expect(afterP1.players[1].rank).toBe(2)
     expect(afterP1.phase).toBe('ended')
+  })
+
+  it('A-Kループ有効時は K の次に A を出せる', () => {
+    // ♥ 7〜K が並んだ場で p0 が ♥A を持つ（2は場に無い）
+    const board: BoardState = { s: [], h: [7, 8, 9, 10, 11, 12, 13], d: [7], c: [] }
+    const state = makeState([[c('h', 1)], [c('d', 8)]], { board, wrapAround: true })
+    const after = playCard(state, 'p0', c('h', 1))
+    expect(after.board.h).toContain(1)
+    expect(after.players[0].status).toBe('finished')
+  })
+
+  it('A-Kループ無効（標準）では K の次に A を出せない', () => {
+    const board: BoardState = { s: [], h: [7, 8, 9, 10, 11, 12, 13], d: [7], c: [] }
+    const state = makeState([[c('h', 1)], [c('d', 8)]], { board })
+    expect(() => playCard(state, 'p0', c('h', 1))).toThrow()
   })
 })
 

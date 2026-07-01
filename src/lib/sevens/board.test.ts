@@ -66,6 +66,50 @@ describe('canPlace', () => {
     expect(canPlace(b, c('d', 4))).toBe(false) // 孤立5の隣だが連続ブロック外
     expect(canPlace(b, c('d', 5))).toBe(false) // 既出
   })
+
+  it('標準ルールでは K の次に A、A の次に K は置けない（行き止まり）', () => {
+    // ♥ 7〜K が並んだ場（上端がK）
+    const kFilled: BoardState = { ...board, h: [7, 8, 9, 10, 11, 12, 13] }
+    expect(canPlace(kFilled, c('h', 1))).toBe(false) // A は反対側なので不可
+    // ♥ 7〜A が並んだ場（下端がA）
+    const aFilled: BoardState = { ...board, h: [1, 2, 3, 4, 5, 6, 7] }
+    expect(canPlace(aFilled, c('h', 13))).toBe(false) // K は反対側なので不可
+  })
+})
+
+describe('canPlace（A-Kループ・ローカルルール wrapAround=true）', () => {
+  const board = initBoard('diamond7')
+
+  it('7〜K が並べば A を出せる（Kの次＝ループ）', () => {
+    const b: BoardState = { ...board, h: [7, 8, 9, 10, 11, 12, 13] }
+    expect(canPlace(b, c('h', 1), true)).toBe(true) // A（2が無くても）
+    expect(canPlace(b, c('h', 6), true)).toBe(true) // 下方向の端も従来どおり可
+    expect(canPlace(b, c('h', 2), true)).toBe(false) // 2はまだ端ではない
+  })
+
+  it('A を出した後は通常どおり 2 が出せる', () => {
+    const b: BoardState = { ...board, h: [1, 7, 8, 9, 10, 11, 12, 13] }
+    expect(canPlace(b, c('h', 2), true)).toBe(true) // A の隣
+    expect(canPlace(b, c('h', 6), true)).toBe(true) // 7側の端
+  })
+
+  it('7〜A が並べば K を出せる（Aの次＝ループ）', () => {
+    const b: BoardState = { ...board, h: [1, 2, 3, 4, 5, 6, 7] }
+    expect(canPlace(b, c('h', 13), true)).toBe(true) // K（下端Aの隣）
+    expect(canPlace(b, c('h', 8), true)).toBe(true) // 上方向の端も可
+  })
+
+  it('13枚そろったスートには出せる札が無い', () => {
+    const full: BoardState = { ...board, h: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] }
+    for (let r = 1 as Card['rank']; r <= 13; r = (r + 1) as Card['rank']) {
+      expect(canPlace(full, c('h', r), true)).toBe(false)
+    }
+  })
+
+  it('wrapAround を渡さなければ標準ルール（ループしない）', () => {
+    const b: BoardState = { ...board, h: [7, 8, 9, 10, 11, 12, 13] }
+    expect(canPlace(b, c('h', 1))).toBe(false)
+  })
 })
 
 describe('place', () => {

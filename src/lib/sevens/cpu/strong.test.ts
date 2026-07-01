@@ -12,7 +12,7 @@ const c = (suit: Card['suit'], rank: Card['rank']): Card => ({ suit, rank })
 function makeState(
   hands: Card[][],
   board: BoardState = initBoard('diamond7'),
-  opts?: { passesLeft?: number; maxPass?: number },
+  opts?: { passesLeft?: number; maxPass?: number; wrapAround?: boolean },
 ): GameState {
   const players: Player[] = hands.map((hand, seat) => ({
     id: `p${seat}`,
@@ -29,6 +29,7 @@ function makeState(
     phase: 'playing',
     startMode: 'diamond7',
     maxPass: opts?.maxPass ?? 5,
+    wrapAround: opts?.wrapAround ?? false,
   }
 }
 
@@ -121,6 +122,30 @@ describe('全員CPU（強）・混在で対局が最後まで進む', () => {
     // 無制限なので脱落は起きず、全員が上がって終わる。
     expect(state.players.every((p) => p.status === 'finished')).toBe(true)
   })
+
+  it.each([1, 2, 7, 2024])(
+    'A-Kループ×無制限パスでも全員強で膠着せず終局する seed=%i',
+    (seed) => {
+      let state = initGame({
+        players: ['a', 'b', 'c', 'd'].map((id) => ({ id, name: id.toUpperCase() })),
+        maxPass: 0,
+        startMode: 'all7',
+        wrapAround: true,
+        rng: seededRng(seed),
+      })
+      let guard = 0
+      while (state.phase === 'playing' && guard++ < 10000) {
+        const player = currentPlayer(state)
+        const action = decideStrong(state, player.id)
+        state =
+          action.type === 'play'
+            ? playCard(state, player.id, action.card)
+            : pass(state, player.id)
+      }
+      expect(state.phase).toBe('ended')
+      expect(state.players.every((p) => p.status === 'finished')).toBe(true)
+    },
+  )
 
   it.each([3, 11, 42])('seed=%i で弱/中/強 混在でも終局する', (seed) => {
     const deciders = [decideWeak, decideMedium, decideStrong, decideWeak]

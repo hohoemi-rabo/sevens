@@ -23,6 +23,7 @@ function state(players: Player[]): GameState {
     phase: 'ended',
     startMode: 'diamond7',
     maxPass: 3,
+    wrapAround: false,
   }
 }
 

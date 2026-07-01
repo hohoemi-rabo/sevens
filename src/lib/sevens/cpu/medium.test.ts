@@ -17,7 +17,7 @@ function makeState(hands: Card[][], board: BoardState = initBoard('diamond7')): 
     passesLeft: 3,
     status: 'playing',
   }))
-  return { players, board, currentSeat: 0, phase: 'playing', startMode: 'diamond7', maxPass: 3 }
+  return { players, board, currentSeat: 0, phase: 'playing', startMode: 'diamond7', maxPass: 3, wrapAround: false }
 }
 
 describe('decideMedium', () => {

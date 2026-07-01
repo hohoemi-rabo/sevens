@@ -17,7 +17,7 @@ export const decideStrong: CpuStrategy = (state, playerId) => {
   if (!player) {
     throw new Error(`No player with id ${playerId}`)
   }
-  const options = playableCards(player.hand, state.board)
+  const options = playableCards(player.hand, state.board, state.wrapAround)
   if (options.length === 0) return { type: 'pass' }
   // 出せば上がりなら取りこぼさない。
   if (player.hand.length === 1) return { type: 'play', card: options[0] }

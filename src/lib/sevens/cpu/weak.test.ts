@@ -22,6 +22,7 @@ function makeState(hands: Card[][]): GameState {
     phase: 'playing',
     startMode: 'diamond7',
     maxPass: 3,
+    wrapAround: false,
   }
 }
 

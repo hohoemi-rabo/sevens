@@ -69,6 +69,8 @@ interface Room {
   started: boolean;
   maxPass: number;
   startMode: StartMode;
+  /** A-Kループ（ローカルルール）。rematch で同設定を引き継ぐため保持する。 */
+  wrapAround: boolean;
   seed: number | null;
 }
 
@@ -122,6 +124,7 @@ export class RoomStore {
       started: false,
       maxPass: DEFAULT_MAX_PASS,
       startMode: DEFAULT_START_MODE,
+      wrapAround: false,
       seed: null,
     });
     return ok({ roomId, passcode, seat: 0, token });
@@ -167,16 +170,23 @@ export class RoomStore {
   }
 
   /** 現在の席編成で配り直して room.state を作る（startGame/rematch 共通）。席は埋まっている前提。 */
-  private dealInto(room: Room, maxPass: number, startMode: StartMode, seed: number): GameState {
+  private dealInto(
+    room: Room,
+    maxPass: number,
+    startMode: StartMode,
+    wrapAround: boolean,
+    seed: number,
+  ): GameState {
     const players = SEATS.map((s) => {
       const slot = room.seats[s]!; // fill 後は全席埋まる
       return { id: slot.playerId, name: slot.name };
     });
     room.maxPass = maxPass;
     room.startMode = startMode;
+    room.wrapAround = wrapAround;
     room.seed = seed;
     room.started = true;
-    room.state = initGame({ players, maxPass, startMode, rng: seededRng(seed) });
+    room.state = initGame({ players, maxPass, startMode, wrapAround, rng: seededRng(seed) });
     return room.state;
   }
 
@@ -187,10 +197,11 @@ export class RoomStore {
     const maxPass = opts?.maxPass ?? DEFAULT_MAX_PASS;
     if (!isValidMaxPass(maxPass)) return err("INVALID_OPTIONS");
     const startMode = opts?.startMode ?? DEFAULT_START_MODE;
+    const wrapAround = opts?.wrapAround ?? false;
     // 空席は安全側でCPU補完（4席必ず埋める）。CPU強さはホスト指定（既定 weak）。
     this.fillWithCpu(roomId, opts?.cpuStrength ?? DEFAULT_CPU);
     const seed = opts?.seed ?? Math.floor(Math.random() * 0x7fffffff);
-    return ok(this.dealInto(room, maxPass, startMode, seed));
+    return ok(this.dealInto(room, maxPass, startMode, wrapAround, seed));
   }
 
   /**
@@ -203,7 +214,7 @@ export class RoomStore {
     if (!room.started || room.state?.phase !== "ended") return err("GAME_NOT_STARTED");
     room.started = false; // dealInto が再度 true にする
     const seed = Math.floor(Math.random() * 0x7fffffff);
-    return ok(this.dealInto(room, room.maxPass, room.startMode, seed));
+    return ok(this.dealInto(room, room.maxPass, room.startMode, room.wrapAround, seed));
   }
 
   applyPlayerAction(roomId: RoomId, seat: Seat, action: Action): Result<GameState> {

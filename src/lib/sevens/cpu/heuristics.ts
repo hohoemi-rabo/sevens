@@ -23,11 +23,13 @@ export function centrality(rank: Rank): number {
  */
 export function opponentGain(state: GameState, meId: string, card: Card): number {
   const before = state.board
-  const after: BoardState = place(before, card)
+  const after: BoardState = place(before, card, state.wrapAround)
   let gain = 0
   for (const p of state.players) {
     if (p.id === meId || p.status !== 'playing') continue
-    gain += playableCards(p.hand, after).length - playableCards(p.hand, before).length
+    gain +=
+      playableCards(p.hand, after, state.wrapAround).length -
+      playableCards(p.hand, before, state.wrapAround).length
   }
   return gain
 }

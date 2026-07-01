@@ -257,6 +257,23 @@ describe("RoomStore: rematch（#17 もう一回）", () => {
     expect(st.startMode).toBe("all7");
   });
 
+  it("A-Kループ設定は開始で反映され、再戦でも引き継がれる", () => {
+    const store = new RoomStore();
+    const { roomId } = created(store);
+    store.startGame(roomId, { seed: 1, wrapAround: true });
+    expect(store.getState(roomId)!.wrapAround).toBe(true);
+    playToEnd(store, roomId);
+    store.rematch(roomId);
+    expect(store.getState(roomId)!.wrapAround).toBe(true);
+  });
+
+  it("A-Kループ未指定なら標準（wrapAround=false）", () => {
+    const store = new RoomStore();
+    const { roomId } = created(store);
+    store.startGame(roomId, { seed: 1 });
+    expect(store.getState(roomId)!.wrapAround).toBe(false);
+  });
+
   it("席編成（名前・CPU）は再戦でも保持される", () => {
     const store = new RoomStore();
     const { roomId } = created(store, "せんせい");

@@ -29,6 +29,11 @@ export type StartMode = 'diamond7' | 'all7'
 /** 7はすべてのスートの起点ランク。 */
 const PIVOT: Rank = 7
 
+/** 巡回（リング）で1つ上のランク（K=13の次はA=1）。A-Kループルール用。 */
+const cyclicUp = (rank: Rank): Rank => (rank === 13 ? 1 : ((rank + 1) as Rank))
+/** 巡回（リング）で1つ下のランク（A=1の前はK=13）。A-Kループルール用。 */
+const cyclicDown = (rank: Rank): Rank => (rank === 1 ? 13 : ((rank - 1) as Rank))
+
 /** 指定方式で場を初期化する。 */
 export function initBoard(mode: StartMode): BoardState {
   const board = { s: [], h: [], d: [], c: [] } as BoardState
@@ -63,13 +68,30 @@ export function runAround7(pile: readonly Rank[]): { low: Rank; high: Rank } | n
  * - 7が未配置のスート: rank が7のときのみ可（起点）
  * - 7が配置済み: 連続ブロックの low-1（下方向）か high+1（上方向）のみ可
  *   （連続ブロックの最大性より、これらは必ず未配置）。範囲外（K超・A未満）は不可。
+ *
+ * `wrapAround`（A-Kループ・ローカルルール）が true のときは、A(1)とK(13)を隣接扱いにする＝
+ * 各スートを13枚の輪とみなす。例: 7〜Kが並べばA(2の有無に関わらず)を、7〜Aが並べばKを出せる。
+ * 標準ルール（既定 false）ではA/Kは反対側の行き止まりでつながらない。
  */
-export function canPlace(board: BoardState, card: Card): boolean {
+export function canPlace(board: BoardState, card: Card, wrapAround = false): boolean {
   const pile = board[card.suit]
   if (pile.includes(card.rank)) return false
-  const run = runAround7(pile)
-  if (run === null) return card.rank === PIVOT
-  return card.rank === run.low - 1 || card.rank === run.high + 1
+  const set = new Set<number>(pile)
+  if (!set.has(PIVOT)) return card.rank === PIVOT
+
+  if (!wrapAround) {
+    const run = runAround7(pile)! // 7 が場にあるので null にならない
+    return card.rank === run.low - 1 || card.rank === run.high + 1
+  }
+
+  // A-Kループ: 13枚そろえば出せる札は無い（includes で弾かれるが安全に）。
+  if (set.size >= 13) return false
+  // 7を含む連続弧の両端を巡回で求める。size<13＝必ず隙間があるので無限ループしない。
+  let low: Rank = PIVOT
+  while (set.has(cyclicDown(low))) low = cyclicDown(low)
+  let high: Rank = PIVOT
+  while (set.has(cyclicUp(high))) high = cyclicUp(high)
+  return card.rank === cyclicDown(low) || card.rank === cyclicUp(high)
 }
 
 /** ランクを昇順を保って追加した新しい配列を返す（非破壊）。 */
@@ -81,8 +103,8 @@ function addRank(pile: readonly Rank[], rank: Rank): Rank[] {
  * カードを場に置いた新しい状態を返す（非破壊）。
  * 不正な配置（連続しない札・既出札・範囲外）は例外で弾く。
  */
-export function place(board: BoardState, card: Card): BoardState {
-  if (!canPlace(board, card)) {
+export function place(board: BoardState, card: Card, wrapAround = false): BoardState {
+  if (!canPlace(board, card, wrapAround)) {
     throw new Error(`Illegal placement: ${card.suit}${card.rank}`)
   }
   return { ...board, [card.suit]: addRank(board[card.suit], card.rank) }

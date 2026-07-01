@@ -288,7 +288,8 @@ export function GameBoard({ roomId }: { roomId: string }) {
   const opponents = gameState.players.filter((p) => p.seat !== mySeat);
   const ended = gameState.phase === "ended";
   const current = ended ? null : currentPlayer(gameState);
-  const canPlay = isMyTurn && !!selected && isPlayable(selected, gameState.board);
+  const canPlay =
+    isMyTurn && !!selected && isPlayable(selected, gameState.board, gameState.wrapAround);
   const isHost = infoBySeat(mySeat)?.isHost ?? mySeat === 0; // ホスト席は 0（hostSeat）
   const unlimitedPass = isUnlimitedPass(gameState.maxPass);
 
@@ -306,7 +307,7 @@ export function GameBoard({ roomId }: { roomId: string }) {
   };
 
   const doPlay = () => {
-    if (!selected || !isPlayable(selected, gameState.board)) return;
+    if (!selected || !isPlayable(selected, gameState.board, gameState.wrapAround)) return;
     const card = selected;
     const id = cardId(card);
     // 出す前に手札カードと置き場スロットの位置を採寸し、その間を飛ばす（採れなければ演出なし）。
@@ -339,7 +340,7 @@ export function GameBoard({ roomId }: { roomId: string }) {
   const handlePass = () => {
     if (!isMyTurn) return;
     // お助けON で出せる札があるのにパスしようとしたら確認（#15・REQUIREMENTS 3.3）。
-    if (helpMode && hasPlayable(human.hand, gameState.board)) {
+    if (helpMode && hasPlayable(human.hand, gameState.board, gameState.wrapAround)) {
       setPassWarnOpen(true);
       return;
     }
@@ -416,6 +417,7 @@ export function GameBoard({ roomId }: { roomId: string }) {
                 <HandCards
                   hand={human.hand}
                   board={gameState.board}
+                  wrapAround={gameState.wrapAround}
                   selectedId={selected ? cardId(selected) : null}
                   onSelect={handleSelect}
                   disabled={!isMyTurn || human.status !== "playing"}

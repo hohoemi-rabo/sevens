@@ -41,6 +41,11 @@ export interface GameState {
   startMode: StartMode
   /** ホストが設定したパス可能回数（1〜5）。 */
   maxPass: number
+  /**
+   * A-Kループ（ローカルルール）が有効か。true でA(1)とK(13)を隣接扱いにする。
+   * 既定 false＝標準ルール（A/Kは反対側の行き止まりでつながらない）。
+   */
+  wrapAround: boolean
 }
 
 export interface InitGameOptions {
@@ -49,6 +54,8 @@ export interface InitGameOptions {
   /** パス可能回数（1〜5）。 */
   maxPass: number
   startMode: StartMode
+  /** A-Kループ（ローカルルール）を有効にするか（既定 false=標準）。 */
+  wrapAround?: boolean
   /** シャッフル用RNG。テストでは seededRng を渡して決定論的にする。 */
   rng?: Rng
 }
@@ -81,7 +88,7 @@ function removeStartingSevens(
  * - all7: 席0から開始
  */
 export function initGame(opts: InitGameOptions): GameState {
-  const { players, maxPass, startMode, rng } = opts
+  const { players, maxPass, startMode, wrapAround = false, rng } = opts
   if (!isValidMaxPass(maxPass)) {
     throw new Error(`maxPass must be 1..5 or 0 (unlimited): ${maxPass}`)
   }
@@ -111,6 +118,7 @@ export function initGame(opts: InitGameOptions): GameState {
     phase: 'playing',
     startMode,
     maxPass,
+    wrapAround,
   }
 }
 
@@ -183,11 +191,11 @@ export function playCard(state: GameState, playerId: string, card: Card): GameSt
   if (!player.hand.some((c) => cardsEqual(c, card))) {
     throw new Error(`Player does not hold ${cardId(card)}`)
   }
-  if (!isPlayable(card, state.board)) {
+  if (!isPlayable(card, state.board, state.wrapAround)) {
     throw new Error(`Card ${cardId(card)} is not playable`)
   }
 
-  const board = place(state.board, card)
+  const board = place(state.board, card, state.wrapAround)
   const hand = player.hand.filter((c) => !cardsEqual(c, card))
 
   let players: Player[]
