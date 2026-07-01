@@ -32,8 +32,10 @@ function SuitRow({
   const color = isRedSuit(suit) ? 'text-red-600' : 'text-gray-100'
 
   return (
-    <div className="flex items-center gap-3">
-      <div className={`flex w-12 shrink-0 items-center justify-center text-3xl font-bold ${color}`}>
+    <div className="flex items-center gap-2 tall:gap-3">
+      <div
+        className={`flex w-9 shrink-0 items-center justify-center text-2xl font-bold tall:w-12 tall:text-3xl ${color}`}
+      >
         {SUIT_SYMBOL[suit]}
         <span className="sr-only">{SUIT_LABEL[suit]}</span>
       </div>
@@ -43,7 +45,7 @@ function SuitRow({
           if (placed.has(rank)) {
             // 飛行アニメ中の札は着地まで隠す（同サイズの透明枠でレイアウト維持）。
             if (hiddenIds?.has(slot)) {
-              return <div key={rank} aria-hidden className="h-[90px] w-16" />
+              return <div key={rank} aria-hidden className="h-[67px] w-12 tall:h-[90px] tall:w-16" />
             }
             return <Card key={rank} card={{ suit, rank }} size="bd" />
           }
@@ -53,7 +55,7 @@ function SuitRow({
               key={rank}
               aria-hidden
               data-board-slot={slot}
-              className={`flex h-[90px] w-16 items-center justify-center rounded-lg border-2 border-dashed text-base font-bold ${
+              className={`flex h-[67px] w-12 items-center justify-center rounded-lg border-2 border-dashed text-sm font-bold tall:h-[90px] tall:w-16 tall:text-base ${
                 isPivot ? 'border-yellow-400/80 text-yellow-300' : 'border-white/20 text-white/30'
               }`}
             >
@@ -75,10 +77,10 @@ export default function Board({
   hiddenIds?: ReadonlySet<string>
 }) {
   return (
-    <div className="overflow-x-auto rounded-2xl bg-green-900/40 p-3">
+    <div className="overflow-x-auto rounded-2xl bg-green-900/40 p-2 tall:p-3">
       {/* 中身は自然な幅（w-max）のまま、背景ボックス内で中央寄せ（mx-auto）。
           画面が狭く収まらないときは overflow-x-auto で横スクロールに切り替わる。 */}
-      <div className="mx-auto flex w-max flex-col gap-2">
+      <div className="mx-auto flex w-max flex-col gap-1 tall:gap-2">
         {SUITS.map((suit) => (
           <SuitRow key={suit} suit={suit} pile={board[suit]} hiddenIds={hiddenIds} />
         ))}

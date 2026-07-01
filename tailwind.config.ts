@@ -8,6 +8,11 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      // 高さ用ブレークポイント。短い画面（15型ノート等）では場・相手を自動で小さくし
+      // スクロールを減らす＝出す演出が画面外へ飛ばないようにする（既定=短い、tall:=大きい）。
+      screens: {
+        tall: { raw: "(min-height: 800px)" },
+      },
       colors: {
         background: "var(--background)",
         foreground: "var(--foreground)",

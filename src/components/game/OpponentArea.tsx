@@ -53,31 +53,40 @@ export default function OpponentArea({ players, currentSeat, infoBySeat }: Oppon
             key={p.id}
             // 出す演出（相手→置き場の飛行）でこの席の発射位置を採寸する。
             data-opponent-seat={p.seat}
-            className={`flex min-w-[170px] flex-col items-center gap-1 rounded-xl border-2 p-3 transition-colors ${
+            // 短い画面=横並びコンパクト（縦を節約）／背の高い画面=縦カード（従来の見た目）。
+            className={`flex items-center gap-2 rounded-xl border-2 p-2 transition-colors tall:min-w-[170px] tall:flex-col tall:gap-1 tall:p-3 ${
               isTurn
                 ? 'border-yellow-400 bg-yellow-100 ring-4 ring-yellow-300'
                 : 'border-gray-300 bg-white'
             } ${!connected ? 'opacity-70' : ''}`}
           >
             <Avatar seat={p.seat} name={p.name} size="md" dimmed={!connected} />
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-bold text-gray-800">{p.name}</span>
-              {isCpu && (
-                <span className="rounded bg-sky-600 px-1.5 py-0.5 text-xs font-bold text-white">
-                  CPU
+            <div className="flex min-w-0 flex-col gap-0.5 tall:items-center tall:gap-1">
+              <div className="flex flex-wrap items-center gap-1.5 tall:gap-2">
+                <span className="text-base font-bold text-gray-800 tall:text-lg">{p.name}</span>
+                {isCpu && (
+                  <span className="rounded bg-sky-600 px-1.5 py-0.5 text-xs font-bold text-white">
+                    CPU
+                  </span>
+                )}
+                <StatusBadge player={p} connected={connected} />
+              </div>
+              <div className="flex items-center gap-2">
+                {/* 装飾の裏向きカードは背の高い画面のみ（短い画面は数字だけで縦を節約）。 */}
+                <span className="hidden tall:block">
+                  <Card size="md" />
                 </span>
-              )}
-              <StatusBadge player={p} connected={connected} />
-            </div>
-            <div className="flex items-center gap-2">
-              <Card size="md" />
-              <span className="text-3xl font-bold text-gray-800">
-                {p.hand.length}
-                <span className="ml-1 text-base font-normal">枚</span>
-              </span>
-            </div>
-            <div className="text-base text-gray-700">
-              残りパス: <span className="font-bold">{p.passesLeft}</span>回
+                <span className="text-2xl font-bold text-gray-800 tall:text-3xl">
+                  {p.hand.length}
+                  <span className="ml-0.5 text-sm font-normal tall:ml-1 tall:text-base">枚</span>
+                </span>
+                <span className="text-sm text-gray-700 tall:hidden">
+                  残パス <span className="font-bold">{p.passesLeft}</span>
+                </span>
+              </div>
+              <div className="hidden text-base text-gray-700 tall:block">
+                残りパス: <span className="font-bold">{p.passesLeft}</span>回
+              </div>
             </div>
           </div>
         )

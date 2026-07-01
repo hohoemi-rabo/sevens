@@ -359,7 +359,7 @@ export function GameBoard({ roomId }: { roomId: string }) {
 
       <div
         data-room-id={roomId}
-        className={`mx-auto flex max-w-6xl flex-col gap-3 ${showActionBar ? "pb-28" : ""}`}
+        className={`mx-auto flex max-w-6xl flex-col gap-2 tall:gap-3 ${showActionBar ? "pb-24 tall:pb-28" : ""}`}
       >
         {connection !== "connected" && (
           <p
@@ -388,7 +388,7 @@ export function GameBoard({ roomId }: { roomId: string }) {
             onLeave={backToTitle}
           />
         ) : (
-          <div className="mt-auto flex flex-col items-center gap-4 rounded-2xl bg-green-900/40 p-4">
+          <div className="mt-auto flex flex-col items-center gap-2 rounded-2xl bg-green-900/40 p-2 tall:gap-4 tall:p-4">
             {paused && isMyTurn ? (
               <div className="flex flex-col items-center gap-4 py-6 text-center">
                 <Avatar seat={mySeat} name={human.name} size="lg" />

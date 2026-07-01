@@ -9,7 +9,7 @@ import { cardId, type Card as CardType } from '@/lib/sevens/cards'
 
 const SIZE = {
   sm: 'w-12 h-[67px]', // 小さめ（48x67）
-  bd: 'w-16 h-[90px]', // 場（盤面）。シニアが見やすいよう大きめ（64x90）
+  bd: 'w-12 h-[67px] tall:w-16 tall:h-[90px]', // 場（盤面）。短い画面=48x67／背の高い画面=64x90
   md: 'w-[72px] h-[101px]', // 相手枚数など
   lg: 'w-20 h-28', // 手札（80x112, タップ領域60px以上）
 } as const
