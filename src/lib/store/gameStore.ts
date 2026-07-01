@@ -6,7 +6,6 @@
 // 7並べでは「自分の合法手」は UI 側で isPlayable を都度計算するため、ここでは保持しない。
 
 import { create } from "zustand";
-import type { GameState } from "@/lib/sevens/state";
 import { clearSession, loadSession, saveSession } from "@/lib/store/session-storage";
 import type {
   AdapterError,
@@ -29,10 +28,11 @@ export interface GameStore {
   mySeat: Seat | null;
   myToken: ClientToken | null;
   players: readonly PlayerInfo[];
-  // フェーズ3時点では 7並べUI（components/game）だけが読むので GameState 型のまま扱う。
-  // 神経衰弱の view（ConcentrationView）は境界でここへ流れ込むが、専用UI・型付けはフェーズ4。
-  gameState: GameState | null;
+  // サーバー配信の可視状態（union）。UI 側は view の形で 7並べ/神経衰弱を判別する（isConcentrationView）。
+  gameState: GameView | null;
   lastError: AdapterError | null;
+  /** ホストが選んだゲーム（'sevens' | 'concentration'）。ロビー設定の出し分けに使う。 */
+  gameId: string | null;
   /** ホストが部屋を解散したとき true（#17）。UI はトップへ戻す。 */
   dissolved: boolean;
 
@@ -60,6 +60,7 @@ const INITIAL = {
   players: [] as readonly PlayerInfo[],
   gameState: null,
   lastError: null,
+  gameId: null,
   dissolved: false,
 };
 
@@ -98,9 +99,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       }),
       adapter.onPlayers((players) => set({ players })),
-      // GameView（union）を受ける。フェーズ3のUIは7並べのみなので GameState として保持（下記コメント参照）。
-      adapter.onState((v: GameView) => set({ gameState: v as GameState })),
-      adapter.onEnd((v: GameView) => set({ gameState: v as GameState })),
+      adapter.onState((gameState) => set({ gameState })),
+      adapter.onEnd((gameState) => set({ gameState })),
       adapter.onError((lastError) => set({ lastError })),
       // ホストの解散通知: セッションを捨て、UI をトップへ戻すためのフラグを立てる（#17）。
       adapter.onDissolved(() => {
@@ -114,7 +114,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   async createRoom(name, gameId) {
     try {
       const a = await requireAdapter().createRoom(name, gameId);
-      set({ roomId: a.roomId, mySeat: a.seat, myToken: a.token, passcode: a.passcode ?? null });
+      set({ roomId: a.roomId, mySeat: a.seat, myToken: a.token, passcode: a.passcode ?? null, gameId: gameId ?? "sevens" });
       saveSession({ roomId: a.roomId, seat: a.seat, token: a.token });
     } catch (e) {
       set({ lastError: e as AdapterError });

@@ -9,6 +9,8 @@ import { useEffect, useRef } from "react";
 import { useGameStore } from "@/lib/store/gameStore";
 import { useAudioStore } from "@/lib/store/audioStore";
 import type { GameState } from "@/lib/sevens/state";
+import type { GameView } from "@/lib/adapter/types";
+import { isConcentrationView } from "@/lib/concentration/view";
 import { diffGameState, type AudioEvent } from "@/lib/audio/events";
 import { playSfx, type SfxName } from "@/lib/audio/sfx";
 import { speak } from "@/lib/audio/speech";
@@ -49,10 +51,10 @@ export function useAudioEffects(): void {
     installAudioUnlock();
     hydrate();
 
-    // prev → next を音に変換する共通処理。
-    const handle = (next: GameState | null) => {
-      if (!next) {
-        prevRef.current = null; // 退室・初期化でベースラインに戻す
+    // prev → next を音に変換する共通処理（このフックは 7並べ専用＝神経衰弱の view は無視する）。
+    const handle = (next: GameView | null) => {
+      if (!next || isConcentrationView(next)) {
+        prevRef.current = null; // 退室・初期化・対象外ゲームでベースラインに戻す
         return;
       }
       const prev = prevRef.current;

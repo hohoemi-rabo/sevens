@@ -134,7 +134,8 @@ export function GameBoard({ roomId }: { roomId: string }) {
   useGameConnection(); // 接続維持（タイトル→対局のクライアント遷移で切らない）
   useAudioEffects(); // ゲームイベントを効果音・読み上げにひも付け（#14）
   useBgm(); // BGM（対局中のみ・既定OFF・端末ごとにメニューでON）
-  const gameState = useGameStore((s) => s.gameState);
+  // GameRouter が view 形状で 7並べを保証済みなので GameState に narrow して扱う。
+  const gameState = useGameStore((s) => s.gameState as GameState | null);
   const mySeat = useGameStore((s) => s.mySeat);
   const connection = useGameStore((s) => s.connection);
   const players = useGameStore((s) => s.players); // PlayerInfo[]（CPU/接続状態）
