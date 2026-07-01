@@ -9,6 +9,7 @@ import { type Rng, seededRng } from "@/lib/sevens/deal";
 import { type ConcentrationConfig, type Slot, generateBoard } from "@/lib/concentration/board";
 import { isPair, isTrump } from "@/lib/concentration/cards";
 import { hasFacedownTrump, slotAt } from "@/lib/concentration/flip";
+import { applyPeek, applyShuffle, applySwap } from "@/lib/concentration/special";
 
 export interface CPlayer {
   readonly id: string;
@@ -31,6 +32,8 @@ export interface ConcentrationState {
   readonly revealed: number[]; // この手番でめくって表になっている位置（0..2）
   readonly pending: Pending | null;
   readonly pointByRank: Partial<Record<Rank, number>>;
+  readonly shuffleSwapPairs: number; // シャッフル特殊が動かす組数（config由来・実行時に必要）
+  readonly rngSeed: number; // シャッフル特殊などの追加乱数（決定論・JSON安全＝Rng closure を持たない）
 }
 
 export type CAction =
@@ -51,7 +54,17 @@ export function initGame(opts: InitOptions): ConcentrationState {
   const rng = opts.rng ?? seededRng(opts.seed ?? 0);
   const { slots, pointByRank } = generateBoard(opts.config, rng);
   const players: CPlayer[] = opts.players.map((p, seat) => ({ id: p.id, name: p.name, seat, collected: [] }));
-  return { slots, players, currentSeat: 0, phase: "playing", revealed: [], pending: null, pointByRank };
+  return {
+    slots,
+    players,
+    currentSeat: 0,
+    phase: "playing",
+    revealed: [],
+    pending: null,
+    pointByRank,
+    shuffleSwapPairs: opts.config.shuffleSwapPairs,
+    rngSeed: nextSeed(rng), // 場生成後の乱数系列から派生（以降のシャッフル特殊で使う）
+  };
 }
 
 export function currentPlayer(state: ConcentrationState): CPlayer {
@@ -64,6 +77,8 @@ export function isFinished(state: ConcentrationState): boolean {
 }
 
 const nextSeat = (state: ConcentrationState): number => (state.currentSeat + 1) % state.players.length;
+/** 乱数系列から次に保存するシード（JSON安全な number）を導く。 */
+const nextSeed = (rng: Rng): number => Math.floor(rng() * 0x7fffffff);
 
 /**
  * 行動を適用して新しい状態を返す（不変・非破壊）。手番外・phase違い・pending違反・不正な位置は throw。
@@ -79,9 +94,9 @@ export function handleAction(state: ConcentrationState, playerId: string, action
     case "resolve":
       return applyResolve(state);
     case "swap":
+      return applySwapChoice(state, action.a, action.b);
     case "peek":
-      // 特殊カードの選択（choose-swap / choose-peek）はフェーズC3で配線する。
-      throw new Error(`action not wired yet: ${action.type}`);
+      return applyPeekChoice(state, action.pos);
     default: {
       const _exhaustive: never = action;
       throw new Error(`unknown action: ${JSON.stringify(_exhaustive)}`);
@@ -93,16 +108,47 @@ function applyFlip(state: ConcentrationState, pos: number): ConcentrationState {
   if (state.pending) throw new Error("must resolve pending first");
   if (state.revealed.length >= 2) throw new Error("already revealed two cards");
   const slot = slotAt(state.slots, pos);
-  if (!isTrump(slot.face) || slot.status !== "facedown") {
-    // 特殊カードはフェーズC3で即発動配線。ここでは伏せトランプのみ受け付ける。
-    if (slot.status !== "facedown") throw new Error("card is not face-down");
-    throw new Error("special cards not wired yet");
-  }
+  if (slot.status !== "facedown") throw new Error("card is not face-down");
   if (state.revealed.includes(pos)) throw new Error("already revealed this position");
+
+  if (!isTrump(slot.face)) return applySpecial(state, slot); // 特殊カードはめくった瞬間に即発動（§5.1）
 
   const revealed = [...state.revealed, pos];
   const pending: Pending | null = revealed.length === 2 ? { type: "resolve" } : null;
   return { ...state, revealed, pending };
+}
+
+/**
+ * 特殊カードの即発動（A方式・§5.1）。発動したカードは使い切りで場から除外（used）。
+ * 既にめくっていたトランプ1枚目は伏せ戻す（revealed をクリア）。
+ * シャッフルは自動発動して手番終了。入れ替え/覗き見は発動者の選択待ち（pending）に入る。
+ */
+function applySpecial(state: ConcentrationState, slot: Slot): ConcentrationState {
+  if (slot.face.type !== "special") throw new Error("not a special card");
+  const used = state.slots.map((s) => (s.pos === slot.pos ? { ...s, status: "used" as const } : s));
+  switch (slot.face.special.kind) {
+    case "shuffle": {
+      const rng = seededRng(state.rngSeed);
+      const slots = applyShuffle(used, rng, state.shuffleSwapPairs);
+      return { ...state, slots, rngSeed: nextSeed(rng), revealed: [], pending: null, currentSeat: nextSeat(state) };
+    }
+    case "swap":
+      return { ...state, slots: used, revealed: [], pending: { type: "choose-swap" } };
+    case "peek":
+      return { ...state, slots: used, revealed: [], pending: { type: "choose-peek" } };
+  }
+}
+
+function applySwapChoice(state: ConcentrationState, a: number, b: number): ConcentrationState {
+  if (state.pending?.type !== "choose-swap") throw new Error("no swap to choose");
+  const slots = applySwap(state.slots, a, b);
+  return { ...state, slots, pending: null, currentSeat: nextSeat(state) }; // 効果適用で手番終了
+}
+
+function applyPeekChoice(state: ConcentrationState, pos: number): ConcentrationState {
+  if (state.pending?.type !== "choose-peek") throw new Error("no peek to choose");
+  const slots = applyPeek(state.slots, pos); // 検証のみ（共有状態は不変）
+  return { ...state, slots, pending: null, currentSeat: nextSeat(state) };
 }
 
 function applyResolve(state: ConcentrationState): ConcentrationState {

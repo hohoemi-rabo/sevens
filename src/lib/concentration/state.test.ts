@@ -110,6 +110,60 @@ describe("不正手は throw", () => {
   });
 });
 
+describe("特殊カード（即発動）", () => {
+  // 特殊カードを含む盤（3種すべて出るよう specialRatio を上げる）。
+  const SPCFG: ConcentrationConfig = { pairCount: 13, specialRatio: 0.3, shuffleSwapPairs: 2, highValueRatio: 0 };
+  const startSp = (seed = 11) => initGame({ players, config: SPCFG, seed });
+  const findSpecial = (s: ConcentrationState, kind: "shuffle" | "swap" | "peek") =>
+    s.slots.find((sl) => sl.face.type === "special" && sl.face.special.kind === kind && sl.status === "facedown")!.pos;
+  const facedownTrumps = (s: ConcentrationState) =>
+    s.slots.filter((sl) => isTrump(sl.face) && sl.status === "facedown").map((sl) => sl.pos);
+
+  it("シャッフルは自動発動して used になり手番終了・札は保存", () => {
+    const s0 = startSp();
+    const before = s0.slots.length;
+    const s = handleAction(s0, "p0", { type: "flip", pos: findSpecial(s0, "shuffle") });
+    expect(s.slots.find((sl) => sl.pos === findSpecial(s0, "shuffle"))!.status).toBe("used");
+    expect(turnId(s)).toBe("p1"); // 手番終了
+    expect(s.pending).toBeNull();
+    expect(s.slots).toHaveLength(before); // マス数保存
+  });
+
+  it("入れ替えは選択待ち→2枚指定で入替して手番終了", () => {
+    const s0 = startSp();
+    const flipped = handleAction(s0, "p0", { type: "flip", pos: findSpecial(s0, "swap") });
+    expect(flipped.pending).toEqual({ type: "choose-swap" });
+    expect(turnId(flipped)).toBe("p0"); // まだ発動者の手番
+    const [a, b] = facedownTrumps(flipped);
+    const faceA = flipped.slots[a].face;
+    const s = handleAction(flipped, "p0", { type: "swap", a, b });
+    expect(s.slots[b].face).toEqual(faceA); // 入れ替わった
+    expect(s.pending).toBeNull();
+    expect(turnId(s)).toBe("p1"); // 手番終了
+  });
+
+  it("覗き見は選択待ち→1枚指定で共有状態は不変・手番終了", () => {
+    const s0 = startSp();
+    const flipped = handleAction(s0, "p0", { type: "flip", pos: findSpecial(s0, "peek") });
+    expect(flipped.pending).toEqual({ type: "choose-peek" });
+    const target = facedownTrumps(flipped)[0];
+    const s = handleAction(flipped, "p0", { type: "peek", pos: target });
+    expect(s.slots[target].face).toEqual(flipped.slots[target].face); // 中身は共有状態に出さない
+    expect(s.pending).toBeNull();
+    expect(turnId(s)).toBe("p1");
+  });
+
+  it("1枚目トランプ→2枚目に特殊を引くと、トランプは伏せ戻り特殊が発動", () => {
+    const s0 = startSp();
+    const t = s0.slots.filter((sl) => isTrump(sl.face) && sl.status === "facedown")[0].pos;
+    const afterTrump = handleAction(s0, "p0", { type: "flip", pos: t });
+    expect(afterTrump.revealed).toEqual([t]);
+    const s = handleAction(afterTrump, "p0", { type: "flip", pos: findSpecial(s0, "shuffle") });
+    expect(s.revealed).toEqual([]); // 1枚目トランプは伏せ戻し
+    expect(turnId(s)).toBe("p1");
+  });
+});
+
 describe("serialize", () => {
   it("JSON 往復で同一", () => {
     const s = handleAction(start(), "p0", { type: "flip", pos: 0 });
