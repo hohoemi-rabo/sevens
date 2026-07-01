@@ -56,6 +56,10 @@ export const sevensModule: GameModule<GameState, Action, GameState, SevensConfig
     return strategyFor(strength)(state, playerId);
   },
 
+  autoResolvable(): boolean {
+    return false; // 7並べは play/pass のみ＝常に接続中の人間が自分で打つ
+  },
+
   transitions(before: GameState, after: GameState): readonly GameTransition[] {
     const out: GameTransition[] = [];
     for (const p of after.players) {

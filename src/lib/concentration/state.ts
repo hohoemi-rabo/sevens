@@ -34,6 +34,9 @@ export interface ConcentrationState {
   readonly pointByRank: Partial<Record<Rank, number>>;
   readonly shuffleSwapPairs: number; // シャッフル特殊が動かす組数（config由来・実行時に必要）
   readonly rngSeed: number; // シャッフル特殊などの追加乱数（決定論・JSON安全＝Rng closure を持たない）
+  // 覗き見中の1枚（発動者だけに中身を見せる・§5.3）。中身は共有状態に出さず、
+  // getView（module）が peek.seat の view にだけ face を載せる。発動者の次アクションで消える。
+  readonly peek: { readonly seat: number; readonly pos: number } | null;
 }
 
 export type CAction =
@@ -64,6 +67,7 @@ export function initGame(opts: InitOptions): ConcentrationState {
     pointByRank,
     shuffleSwapPairs: opts.config.shuffleSwapPairs,
     rngSeed: nextSeed(rng), // 場生成後の乱数系列から派生（以降のシャッフル特殊で使う）
+    peek: null,
   };
 }
 
@@ -88,15 +92,18 @@ export function handleAction(state: ConcentrationState, playerId: string, action
   if (state.phase !== "playing") throw new Error("game already ended");
   if (currentPlayer(state).id !== playerId) throw new Error("not your turn");
 
+  // 覗き見の私的表示は発動者の「次の自分の手番の一手」で終える（getView が peek を見せている）。
+  const s = state.peek && state.peek.seat === state.currentSeat ? { ...state, peek: null } : state;
+
   switch (action.type) {
     case "flip":
-      return applyFlip(state, action.pos);
+      return applyFlip(s, action.pos);
     case "resolve":
-      return applyResolve(state);
+      return applyResolve(s);
     case "swap":
-      return applySwapChoice(state, action.a, action.b);
+      return applySwapChoice(s, action.a, action.b);
     case "peek":
-      return applyPeekChoice(state, action.pos);
+      return applyPeekChoice(s, action.pos);
     default: {
       const _exhaustive: never = action;
       throw new Error(`unknown action: ${JSON.stringify(_exhaustive)}`);
@@ -148,7 +155,8 @@ function applySwapChoice(state: ConcentrationState, a: number, b: number): Conce
 function applyPeekChoice(state: ConcentrationState, pos: number): ConcentrationState {
   if (state.pending?.type !== "choose-peek") throw new Error("no peek to choose");
   const slots = applyPeek(state.slots, pos); // 検証のみ（共有状態は不変）
-  return { ...state, slots, pending: null, currentSeat: nextSeat(state) };
+  // 発動者（現手番）だけに中身を見せる印を残して手番終了。中身自体は共有状態に出さない。
+  return { ...state, slots, pending: null, peek: { seat: state.currentSeat, pos }, currentSeat: nextSeat(state) };
 }
 
 function applyResolve(state: ConcentrationState): ConcentrationState {

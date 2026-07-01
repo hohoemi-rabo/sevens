@@ -151,6 +151,16 @@ describe("特殊カード（即発動）", () => {
     expect(s.slots[target].face).toEqual(flipped.slots[target].face); // 中身は共有状態に出さない
     expect(s.pending).toBeNull();
     expect(turnId(s)).toBe("p1");
+    expect(s.peek).toEqual({ seat: 0, pos: target }); // 発動者だけに見せる印（中身は getView が載せる）
+  });
+
+  it("覗き見の印は発動者の次アクションで消える（他席の手番では残る）", () => {
+    const s0 = startSp();
+    const flipped = handleAction(s0, "p0", { type: "flip", pos: findSpecial(s0, "peek") });
+    const afterPeek = handleAction(flipped, "p0", { type: "peek", pos: facedownTrumps(flipped)[0] });
+    // p1 の手番（1枚めくる）では peek は残る
+    const p1flip = handleAction(afterPeek, "p1", { type: "flip", pos: facedownTrumps(afterPeek)[0] });
+    expect(p1flip.peek).toEqual(afterPeek.peek);
   });
 
   it("1枚目トランプ→2枚目に特殊を引くと、トランプは伏せ戻り特殊が発動", () => {

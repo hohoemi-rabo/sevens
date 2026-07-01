@@ -61,6 +61,13 @@ export interface GameModule<State, Action, View, Config> {
   /** CPU・切断代行の「次の一手」を決める（適用は handleAction）。 */
   decideAuto(state: State, playerId: string, strength: CpuStrength): Action;
 
+  /**
+   * 手番の人間が接続中でも、サーバーが自動で次を進めるべき状態か。
+   * 例: 神経衰弱で2枚めくった後の「見せてから伏せる」＝数秒後にサーバーが resolve を確定する。
+   * true のとき土台は currentSeat の playerId に対し decideAuto を自動適用する。7並べは常に false。
+   */
+  autoResolvable(state: State): boolean;
+
   /** before→after で新たに起きた出来事（finish/eliminated 等）を列挙する（演出用）。 */
   transitions(before: State, after: State): readonly GameTransition[];
 }
