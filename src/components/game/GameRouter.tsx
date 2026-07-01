@@ -20,7 +20,7 @@ export function GameRouter({ roomId }: { roomId: string }) {
   const concentration = gameState ? isConcentrationView(gameState) : gameId === "concentration";
   const sevens = gameState ? !isConcentrationView(gameState) : gameId === "sevens";
 
-  if (concentration) return <ConcentrationBoard roomId={roomId} />;
+  if (concentration) return <ConcentrationBoard />;
   if (sevens) return <GameBoard roomId={roomId} />;
 
   // どちらとも分からない（再接続で state 到着待ち / 直アクセス）。
