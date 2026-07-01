@@ -24,9 +24,10 @@ export function seededRng(seed: number): Rng {
 }
 
 /**
- * デッキをシャッフルする（Fisher–Yates）。非破壊で新しい配列を返す。
+ * 配列をシャッフルする（Fisher–Yates）。非破壊で新しい配列を返す。
+ * 要素型は任意（Card だけでなく Rank・位置番号・神経衰弱の伏せ札などにも使える）。
  */
-export function shuffle(deck: readonly Card[], rng: Rng = Math.random): Card[] {
+export function shuffle<T>(deck: readonly T[], rng: Rng = Math.random): T[] {
   const result = deck.slice()
   for (let i = result.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1))
