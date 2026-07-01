@@ -13,6 +13,44 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **クラウド不要**: ホストPC1台＋教室内Wi-Fiで完結（インターネット前提にしない）
 - 既存の麻雀ゲームの技術資産（通信層・部屋管理・CPU・お助けモード・音声）を流用する方針
 
+---
+
+## 教室ゲームプラットフォーム統合（7並べ＋神経衰弱）※現在の主作業
+
+本リポジトリは 7並べ単体から、**1つのアプリで「7並べ」「神経衰弱」を選んで遊べるプラットフォーム**へ拡張中。**着手前に必ず要件定義書を以下の順で読む**（技術記述は platform が最優先）:
+1. `REQUIREMENTS_platform.md`（マスター・全体構造と統合方針・確定仕様）
+2. `REQUIREMENTS_sevens.md`（7並べ詳細）　3. `REQUIREMENTS_concentration.md`（神経衰弱詳細・技術は platform 優先）
+
+※旧 `REQUIREMENTS.md` と `docs/` チケットは**7並べ単体時代の記録**（フェーズ1〜4完了済み）。統合作業はこの新3書＋本節を正とする。
+
+**統合方式**: 「共有プラットフォーム＋差し込み式ゲームモジュール（`GameModule`）」。土台（部屋・席・通信・CPU枠・音声・UI部品）はゲームの中身を知らず、各ゲームは `GameModule` を実装して差し込む。**7並べは壊さない**（無回帰が鉄則）。
+
+**進捗（統合フェーズ・plan は phase 単位で `~/.claude/plans/` に作成→承認→実装のリズム）**:
+- ✅ **フェーズ1（土台切り出し）**: `GameModule` シーム導入。`RoomStore`/`server.ts` を module 委譲へ。
+- ✅ **フェーズ2（神経衰弱ロジック）**: `src/lib/concentration/**` 純ルール＋単体/結合テスト。
+- ✅ **フェーズ3（Socket.io・秘匿）**: マルチゲーム化・`getView` 中身秘匿・席ごと配信・`player:action` 統一・CPU補完（基本CPU）。in-process 結合テストで秘匿/覗き見私的性/全局完走を機械保証。
+- ✅ **フェーズ4A（遊べるMVP）**: ゲーム選択・神経衰弱ブラウザUI・特殊カードSVG・結果画面。**ブラウザで通し可**。
+- ▶ **残り**: **4B**＝記憶保持率CPU（弱/中/強）＝`src/lib/concentration/cpu/`＋`concentrationModule.decideAuto` を strength 分岐（現状は記憶なし基本CPU）。**4C**＝音声・効果音（`diffConcentrationView`＋`useConcentrationAudioEffects`＋SfxName拡張）／演出アニメ（めくり・伏せ戻し・シャッフル予告・覗き見の数秒タイマー）。**4D**＝既定値チューニング＋席数可変（2〜4人・現状は4席CPU補完固定）。将来＝坊主めくり等の追加・クラウド。
+
+**アーキテクチャ確定（統合）**:
+- `src/lib/platform/gameModule.ts` — `GameModule<State,Action,View,Config>` 契約: `createInitialState/handleAction/getView/isFinished/currentSeat/decideAuto/autoResolvable/transitions`＋`viewIsPublic`。`CpuStrength`（弱/中/強の枠は platform 側）/`PlayerRef`/`GameTransition` もここ。
+- `src/lib/sevens/module.ts` — `sevensModule`（既存純関数ラップ・`getView` 恒等・`viewIsPublic:true`・`autoResolvable:false`）。7並べ本体は無改修。
+- `src/lib/concentration/**` — 純ルール（`cards`/`board`/`flip`/`state`/`special`/`score`）＋`module.ts`（`concentrationModule`）＋`view.ts`（`isConcentrationView` 型ガード）。**ペア＝同数字・2スート限定**（`PAIR_SUITS=['h','s']`・上限13ペア）。特殊カードA方式（めくった瞬間即発動）3種＝シャッフル/入れ替え/覗き見。`CAction=flip|resolve|swap|peek`。`ConcentrationView`＝`ViewSlot{pos,status,face?}`／`ViewPlayer{seat,name,pairs,score}`。
+- `src/lib/server/session.ts`（`RoomStore`）— `MODULES` レジストリで `gameId→module` 解決。`Room.state:unknown`・per-game `config`（`buildConfig`）。アクセサは **roomId 基点**（`getState/isFinished/viewIsPublic/viewFor/transitions/seatSockets`）。`stepAuto` は CPU/切断代行に加え **`autoResolvable` 状態も自動進行**（神経衰弱の resolve）。`createRoom(name, gameId='sevens')`。型消去は `ErasedModule`（二重キャスト）で `any` 回避。
+- `server.ts` — **席ごと配信**: `viewIsPublic=false` は `seatSockets` で per-socket `getView`（＝伏せ札の中身が各端末に届かない）。アクションは汎用 `player:action {action}` に統一（7並べも）。**自動resolve**は `driveAutoTimed`（`cpuDelay` がリビール窓＝「見せてから伏せる」・本番0.8〜1.8s）。
+- アダプタ契約 `src/lib/adapter/types.ts` — `PlayerAction=Action|CAction`（union）・`GameView=GameState|ConcentrationView`・`StartOptions` に `gameId?`/`concentration?`・`createRoom(name,gameId?)`。`local.ts` の `send` は `player:action` を emit。
+- クライアント — `gameStore.gameState:GameView`（union）＋`gameId`。部屋画面 `src/components/game/GameRouter.tsx` が **view 形状（`isConcentrationView`）で 7並べ/神経衰弱を分岐**（型確定まで中立ローディング＝神経衰弱 view を 7並べ用 `useAudioEffects`/`diffGameState` に流すクラッシュを回避）。7並べ `GameBoard`/`useAudioEffects` は `GameState` に narrow（神経衰弱 view は無視）。
+- 神経衰弱UI — `src/components/game/concentration/{ConcentrationBoard,CardGrid,Scoreboard,TurnPrompt,ConcentrationResult}.tsx`。`GameMenu`/`Avatar`/`ui`/`useGameConnection`/`useBgm` 流用。特殊カード素材＝`public/cards/special/{shuffle,swap,peek}.svg`（`npm run cards:special`／`scripts/generate-special-cards.mjs`）。ホストは `HostScreen` でゲーム選択→`createRoom(name,gameId)`、`HostLobby` を `gameId` 分岐（神経衰弱＝枚数モード 教室10/フル13＋CPU強さ）。
+
+**統合の確定済み設計判断（重要）**:
+- **覗き見の私的表示**: `ConcentrationState.peek:{seat,pos}|null`。`getView` が `peek.seat` の view にだけ対象 face を載せ、発動者の次アクションで消える。中身は共有状態に出さない＝専用イベント不要（席ごと `game:state` が届ける）。
+- **resolve（見せてから伏せる）**: `autoResolvable` で**サーバーが自動確定**（接続中の人間席でも）。クライアントは resolve を送らない。窓は `cpuDelay`。
+- **神経衰弱も4席・CPU補完**（席可変は4D）。`RoomStore` は4席前提のまま。
+- `sevens/deal.ts` の `shuffle` は `<T>` ジェネリック化済み（挙動不変・Rank/位置/伏せ札に再利用）。
+- テストは **263件**（`npm run test:run`）。神経衰弱系＝`concentration/*.test.ts`＋`adapter/concentration.sync.test.ts`。**各フェーズ完了時に test/lint/tsc/build 緑＋実サーバー socket スモーク**で検証（7並べの無回帰を毎回確認）。
+
+---
+
 ## 開発チケットと Todo 管理
 
 開発タスクは `REQUIREMENTS.md` を機能・要件ごとに分割した **`docs/` 配下のチケット**で管理する。`docs/00-overview.md` がインデックス（フェーズ1〜5、依存順）。各チケットは番号順（＝依存関係順）に進める。
@@ -48,6 +86,7 @@ npm run test           # Vitest（watch）
 npm run test:run       # Vitest（1回実行・CI/検証用）
 npm run test:coverage  # Vitest + カバレッジ（@vitest/coverage-v8、src/lib/{sevens,adapter,server}/** 対象）
 npm run cards:generate # トランプSVG 53枚を public/cards/ に再生成
+npm run cards:special  # 神経衰弱の特殊カードSVG 3枚を public/cards/special/ に再生成（統合フェーズ4A）
 npm run avatars:generate # プレイヤーアバターSVG 4枚を public/avatars/ に再生成
 ```
 
