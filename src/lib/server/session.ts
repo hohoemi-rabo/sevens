@@ -1,16 +1,17 @@
 // サーバー権威のセッションコア（純粋・socket/next 非依存 / docs/10）。
 // 部屋・席・ゲーム進行をメモリ上で管理する（DB無し）。socket グルー（server.ts）は
-// これを薄く呼ぶだけ。ゲームロジック層（src/lib/sevens/**）が単一の真実で、不正アクションは
-// playCard/pass の throw を捕まえて AdapterError に翻訳する。
+// これを薄く呼ぶだけ。ゲーム進行は GameModule 越しに行う（this.module）＝土台はゲームの中身を
+// 知らない（REQUIREMENTS_platform.md §1.1）。不正アクションは module.handleAction の throw を
+// 捕まえて AdapterError に翻訳する。フェーズ1では module は sevensModule 固定（唯一のゲーム）。
 //
-// 麻雀（流用元）との違い: アクションは play/pass の2種だけ。reducer/validate/settle/claims や
-// CPU への rng 注入が無く、seat→playerId の解決層と「例外→エラー翻訳」が中核になる。
+// 部屋・席・token・再接続は汎用。ゲーム固有の配札/手番/終局判定/遷移検出は module へ委譲する。
 
-import { type GameState, initGame, pass, playCard } from "@/lib/sevens/state";
-import { seededRng } from "@/lib/sevens/deal";
+import { type GameState } from "@/lib/sevens/state";
 import { isValidMaxPass } from "@/lib/sevens/pass";
 import { type StartMode } from "@/lib/sevens/board";
-import { type Action, type CpuStrength, strategyFor } from "@/lib/sevens/cpu";
+import { type Action, type CpuStrength } from "@/lib/sevens/cpu";
+import { sevensModule } from "@/lib/sevens/module";
+import type { GameTransition } from "@/lib/platform/gameModule";
 import type {
   AdapterError,
   AdapterErrorCode,
@@ -63,6 +64,8 @@ interface SeatSlot {
 interface Room {
   roomId: RoomId;
   passcode: Passcode;
+  /** どのゲームか（フェーズ1は 'sevens' 固定）。将来のマルチゲームで module を引くキー。 */
+  gameId: string;
   hostSeat: Seat;
   seats: (SeatSlot | null)[]; // length 4, index === seat
   state: GameState | null;
@@ -80,6 +83,8 @@ const seatPlayerId = (seat: Seat): string => `p${seat}`;
 
 export class RoomStore {
   private readonly rooms = new Map<RoomId, Room>();
+  // 差し込み式ゲームモジュール。フェーズ1は 7並べ固定。マルチゲーム化時は room.gameId で解決する。
+  private readonly module = sevensModule;
 
   private freshPasscode(): Passcode {
     const taken = new Set([...this.rooms.values()].map((r) => r.passcode));
@@ -100,7 +105,10 @@ export class RoomStore {
     return id;
   }
 
-  createRoom(hostName: string): Result<{ roomId: RoomId; passcode: Passcode; seat: Seat; token: ClientToken }> {
+  createRoom(
+    hostName: string,
+    gameId = "sevens",
+  ): Result<{ roomId: RoomId; passcode: Passcode; seat: Seat; token: ClientToken }> {
     if (!hostName.trim()) return err("NAME_REQUIRED");
     const roomId = this.freshRoomId();
     const passcode = this.freshPasscode();
@@ -118,6 +126,7 @@ export class RoomStore {
     this.rooms.set(roomId, {
       roomId,
       passcode,
+      gameId,
       hostSeat: 0,
       seats,
       state: null,
@@ -186,7 +195,7 @@ export class RoomStore {
     room.wrapAround = wrapAround;
     room.seed = seed;
     room.started = true;
-    room.state = initGame({ players, maxPass, startMode, wrapAround, rng: seededRng(seed) });
+    room.state = this.module.createInitialState(players, { maxPass, startMode, wrapAround }, seed);
     return room.state;
   }
 
@@ -224,12 +233,9 @@ export class RoomStore {
     const slot = room.seats[seat];
     if (!slot) return err("ILLEGAL_ACTION");
     // 席はサーバー束縛を使う（自己申告を信用しない）。slot.playerId で本人を特定する。
-    // 手番外・非保持・出せない札は playCard/pass が throw するので捕まえて翻訳する。
+    // 手番外・非保持・出せない札は module.handleAction が throw するので捕まえて翻訳する。
     try {
-      const next =
-        action.type === "play"
-          ? playCard(room.state, slot.playerId, action.card)
-          : pass(room.state, slot.playerId);
+      const next = this.module.handleAction(room.state, slot.playerId, action);
       room.state = next;
       return ok(next);
     } catch {
@@ -245,23 +251,21 @@ export class RoomStore {
     const room = this.rooms.get(roomId);
     if (!room?.state) return { state: null, acted: false };
     const state = room.state;
-    if (state.phase === "ended") return { state, acted: false };
-    const seat = state.currentSeat;
+    if (this.module.isFinished(state)) return { state, acted: false };
+    const seat = this.module.currentSeat(state);
+    if (seat === null) return { state, acted: false };
     const slot = room.seats[seat];
     const auto = !!slot && (slot.isCpu || !slot.connected); // 切断中の人間は CPU が代行
     if (!auto) return { state, acted: false }; // 接続中の人間の手番で停止
-    const action = strategyFor(slot.cpuStrength ?? DEFAULT_CPU)(state, slot.playerId);
+    const action = this.module.decideAuto(state, slot.playerId, slot.cpuStrength ?? DEFAULT_CPU);
     try {
-      const next =
-        action.type === "play"
-          ? playCard(state, slot.playerId, action.card)
-          : pass(state, slot.playerId);
+      const next = this.module.handleAction(state, slot.playerId, action);
       room.state = next;
       return { state: next, acted: true };
     } catch {
-      // decideWeak が万一不正手を返したら安全側で pass にフォールバック。
+      // 思考が万一不正手を返したら安全側で pass にフォールバック。
       try {
-        room.state = pass(state, slot.playerId);
+        room.state = this.module.handleAction(state, slot.playerId, { type: "pass" });
         return { state: room.state, acted: true };
       } catch {
         return { state, acted: false };
@@ -333,6 +337,28 @@ export class RoomStore {
 
   getState(roomId: RoomId): GameState | null {
     return this.rooms.get(roomId)?.state ?? null;
+  }
+
+  // --- モジュール委譲（グルー server.ts が配信・演出に使う） ---
+
+  /** 終局したか（module へ委譲）。 */
+  isFinished(state: GameState): boolean {
+    return this.module.isFinished(state);
+  }
+
+  /** 状態遷移で新たに起きた出来事（finish/eliminated 等）。演出イベントの導出に使う。 */
+  transitions(before: GameState, after: GameState): readonly GameTransition[] {
+    return this.module.transitions(before, after);
+  }
+
+  /** 状態が全公開か（true=部屋一括配信可・7並べ）。false は席ごとに getView して個別配信。 */
+  get viewIsPublic(): boolean {
+    return this.module.viewIsPublic;
+  }
+
+  /** 指定席から見える可視状態（7並べは恒等）。神経衰弱の中身秘匿はここで効く（フェーズ3）。 */
+  viewFor(state: GameState, seat: Seat): GameState {
+    return this.module.getView(state, seat);
   }
 
   removeRoom(roomId: RoomId): void {
