@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import { currentPlayer, type GameState } from "@/lib/sevens/state";
 import { diffGameState } from "@/lib/audio/events";
 import { isPlayable, hasPlayable } from "@/lib/sevens/playable";
+import { isUnlimitedPass } from "@/lib/sevens/pass";
 import { SUITS, cardId, type Card, type Rank } from "@/lib/sevens/cards";
 import type { PlayerInfo } from "@/lib/adapter/types";
 import { useGameConnection } from "@/lib/store/useGameConnection";
@@ -289,6 +290,7 @@ export function GameBoard({ roomId }: { roomId: string }) {
   const current = ended ? null : currentPlayer(gameState);
   const canPlay = isMyTurn && !!selected && isPlayable(selected, gameState.board);
   const isHost = infoBySeat(mySeat)?.isHost ?? mySeat === 0; // ホスト席は 0（hostSeat）
+  const unlimitedPass = isUnlimitedPass(gameState.maxPass);
 
   // 手札タップ＝即・中央ポップアップ（生徒さんプレイのFB対応）。
   // ノートPCで「出す」ボタンが折り返しの下に隠れスクロールが要る問題を解消するため、
@@ -374,6 +376,7 @@ export function GameBoard({ roomId }: { roomId: string }) {
           players={opponents}
           currentSeat={gameState.currentSeat}
           infoBySeat={infoBySeat}
+          unlimitedPass={unlimitedPass}
         />
 
         <Board board={gameState.board} hiddenIds={hiddenIds} />
@@ -407,6 +410,7 @@ export function GameBoard({ roomId }: { roomId: string }) {
                   helpMode={helpMode}
                   currentName={current?.name}
                   passesLeft={human.passesLeft}
+                  unlimitedPass={unlimitedPass}
                 />
 
                 <HandCards
@@ -429,6 +433,7 @@ export function GameBoard({ roomId }: { roomId: string }) {
           onPass={handlePass}
           onWait={() => setPaused(true)}
           passesLeft={human.passesLeft}
+          unlimitedPass={unlimitedPass}
           mySeat={mySeat}
           myName={human.name}
         />

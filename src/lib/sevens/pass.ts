@@ -13,17 +13,29 @@ import type { GameState, Player } from './state'
 export const MIN_PASS = 1
 export const MAX_PASS = 5
 
-/** パス上限値が設定範囲（1〜5）内か。 */
+/**
+ * 「無制限」パスのセンチネル（maxPass=0）。脱落なしで何度でもパスできる。
+ * JSON安全な数値で表す（GameState はシリアライズして同期・復元するため Infinity は使わない）。
+ */
+export const UNLIMITED_PASS = 0
+
+/** パスが無制限（脱落なし）設定か。 */
+export function isUnlimitedPass(maxPass: number): boolean {
+  return maxPass === UNLIMITED_PASS
+}
+
+/** パス上限値が有効か（1〜5、または 0=無制限）。 */
 export function isValidMaxPass(n: number): boolean {
-  return Number.isInteger(n) && n >= MIN_PASS && n <= MAX_PASS
+  return isUnlimitedPass(n) || (Number.isInteger(n) && n >= MIN_PASS && n <= MAX_PASS)
 }
 
 /**
  * このプレイヤーが今パスすると上限を超過して脱落するか。
  * passesLeft は許容回数で初期化され、許容分を使い切って0になった後の
- * 次のパスが「超過」＝脱落となる。
+ * 次のパスが「超過」＝脱落となる。無制限（maxPass=0）では脱落しない。
  */
-export function willEliminateOnPass(player: Player): boolean {
+export function willEliminateOnPass(player: Player, maxPass: number): boolean {
+  if (isUnlimitedPass(maxPass)) return false
   return player.passesLeft <= 0
 }
 

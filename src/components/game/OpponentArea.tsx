@@ -38,9 +38,16 @@ export interface OpponentAreaProps {
   currentSeat: number
   /** 席番号 → 接続/CPU 情報（gameStore の players=PlayerInfo[] から引く）。 */
   infoBySeat: (seat: number) => PlayerInfo | undefined
+  /** パス無制限（脱落なし）モードか。true なら残数の代わりに「無制限」を表示。 */
+  unlimitedPass?: boolean
 }
 
-export default function OpponentArea({ players, currentSeat, infoBySeat }: OpponentAreaProps) {
+export default function OpponentArea({
+  players,
+  currentSeat,
+  infoBySeat,
+  unlimitedPass = false,
+}: OpponentAreaProps) {
   return (
     <div className="flex flex-wrap justify-center gap-3">
       {players.map((p) => {
@@ -81,11 +88,14 @@ export default function OpponentArea({ players, currentSeat, infoBySeat }: Oppon
                   <span className="ml-0.5 text-sm font-normal tall:ml-1 tall:text-base">枚</span>
                 </span>
                 <span className="text-sm text-gray-700 tall:hidden">
-                  残パス <span className="font-bold">{p.passesLeft}</span>
+                  残パス <span className="font-bold">{unlimitedPass ? "∞" : p.passesLeft}</span>
                 </span>
               </div>
               <div className="hidden text-base text-gray-700 tall:block">
-                残りパス: <span className="font-bold">{p.passesLeft}</span>回
+                残りパス:{" "}
+                <span className="font-bold">
+                  {unlimitedPass ? "無制限" : `${p.passesLeft}回`}
+                </span>
               </div>
             </div>
           </div>

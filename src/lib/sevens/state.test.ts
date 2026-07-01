@@ -119,12 +119,34 @@ describe('initGame バリデーション', () => {
     { id: 'c', name: 'C' },
     { id: 'd', name: 'D' },
   ]
-  it('パス上限が範囲外（0・6・非整数）は例外', () => {
-    for (const maxPass of [0, 6, 2.5]) {
+  it('パス上限が範囲外（6・-1・非整数）は例外', () => {
+    for (const maxPass of [6, -1, 2.5]) {
       expect(() =>
         initGame({ players: fourPlayers, maxPass, startMode: 'diamond7', rng: seededRng(1) }),
       ).toThrow()
     }
+  })
+  it('maxPass=0（無制限）は有効（例外にならない）', () => {
+    expect(() =>
+      initGame({ players: fourPlayers, maxPass: 0, startMode: 'diamond7', rng: seededRng(1) }),
+    ).not.toThrow()
+  })
+})
+
+describe('pass 無制限モード（maxPass=0）', () => {
+  it('残パス0でも脱落せず、残数も減らさない（何度でもパスできる）', () => {
+    // 手札は出せない札のみ（s2 は d7 起点では出せない）＝パスするしかない状況。
+    let state = makeState([[c('s', 2)], [c('h', 2)]], { maxPass: 0 })
+    expect(state.players[0].passesLeft).toBe(0) // 無制限は passesLeft=maxPass=0 で初期化
+    for (let i = 0; i < 10; i++) {
+      const seat = state.currentSeat
+      const pid = state.players.find((p) => p.seat === seat)!.id
+      state = pass(state, pid)
+      // 誰も脱落していない・phase は継続。
+      expect(state.players.every((p) => p.status === 'playing')).toBe(true)
+      expect(state.phase).toBe('playing')
+    }
+    expect(state.players.every((p) => p.passesLeft === 0)).toBe(true)
   })
 })
 

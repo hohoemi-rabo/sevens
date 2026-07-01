@@ -12,9 +12,17 @@ export interface TurnBannerProps {
   currentName?: string;
   /** 自分の残りパス回数（強調表示用）。 */
   passesLeft: number;
+  /** パス無制限（脱落なし）モードか。true なら残数の代わりに「無制限」を表示。 */
+  unlimitedPass?: boolean;
 }
 
-export function TurnBanner({ isMyTurn, helpMode, currentName, passesLeft }: TurnBannerProps) {
+export function TurnBanner({
+  isMyTurn,
+  helpMode,
+  currentName,
+  passesLeft,
+  unlimitedPass = false,
+}: TurnBannerProps) {
   if (!isMyTurn) {
     return (
       <div className="text-xl">
@@ -24,12 +32,10 @@ export function TurnBanner({ isMyTurn, helpMode, currentName, passesLeft }: Turn
     );
   }
 
-  // 残りパス0は警告色（お助けON時に強調）。
-  const passEmphasis = helpMode
-    ? passesLeft <= 0
-      ? "text-rose-300"
-      : "text-yellow-300"
-    : "text-yellow-300";
+  // 残りパス0は警告色（お助けON時に強調）。無制限は警告しない。
+  const passEmphasis =
+    helpMode && !unlimitedPass && passesLeft <= 0 ? "text-rose-300" : "text-yellow-300";
+  const passText = unlimitedPass ? "無制限" : `${passesLeft} 回`;
 
   if (helpMode) {
     return (
@@ -38,7 +44,7 @@ export function TurnBanner({ isMyTurn, helpMode, currentName, passesLeft }: Turn
           あなたの番です！
         </div>
         <div className="text-lg">
-          残りパス <span className={cn("text-2xl font-extrabold", passEmphasis)}>{passesLeft}</span> 回
+          残りパス <span className={cn("text-2xl font-extrabold", passEmphasis)}>{passText}</span>
         </div>
       </div>
     );
@@ -47,7 +53,7 @@ export function TurnBanner({ isMyTurn, helpMode, currentName, passesLeft }: Turn
   // お助けOFF: 最低限の通知のみ。
   return (
     <div className="text-xl">
-      あなたの番です（残りパス <span className={cn("font-bold", passEmphasis)}>{passesLeft}</span> 回）
+      あなたの番です（残りパス <span className={cn("font-bold", passEmphasis)}>{passText}</span>）
     </div>
   );
 }

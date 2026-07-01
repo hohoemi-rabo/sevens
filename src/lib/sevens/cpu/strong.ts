@@ -5,6 +5,7 @@
  * キーカードを戦略的に止める（pass で温存）。教室内・アンチチートなし方針に沿う（REQUIREMENTS 3.4）。
  */
 import { playableCards } from '../playable'
+import { isUnlimitedPass } from '../pass'
 import { centrality, opponentGain, threatHandSize, byCardId } from './heuristics'
 import type { CpuStrategy } from './types'
 
@@ -31,8 +32,14 @@ export const decideStrong: CpuStrategy = (state, playerId) => {
 
   // 戦略的温存（止める）: どの手も相手に札を渡し、上がり間近の相手がいて、自分に余裕が
   // あるならパスして温存する。パス回数は有限なので必ず尽きて終局する。
+  // 無制限（脱落なし）では温存が終局を妨げる（膠着）ため、出せる手は必ず出す。
   const gain = opponentGain(state, playerId, best)
-  if (gain >= 1 && threatHandSize(state, playerId) <= THREAT_HAND && player.passesLeft >= 2) {
+  if (
+    !isUnlimitedPass(state.maxPass) &&
+    gain >= 1 &&
+    threatHandSize(state, playerId) <= THREAT_HAND &&
+    player.passesLeft >= 2
+  ) {
     return { type: 'pass' }
   }
 

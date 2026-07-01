@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import { type CpuStrength } from "@/lib/sevens/cpu";
-import { MIN_PASS, MAX_PASS } from "@/lib/sevens/pass";
+import { MIN_PASS, MAX_PASS, UNLIMITED_PASS } from "@/lib/sevens/pass";
 import { useGameStore } from "@/lib/store/gameStore";
 import { Button, Heading } from "@/components/ui";
 import { QrCode } from "@/components/room/QrCode";
@@ -88,10 +88,10 @@ export function HostLobby() {
         <PlayerList />
       </div>
 
-      {/* パス回数 */}
+      {/* パス回数（無制限＝脱落なし） */}
       <div className="flex flex-col items-center gap-2">
         <span className="text-base">パスできる回数</span>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap justify-center gap-2">
           {PASS_OPTIONS.map((n) => (
             <Button
               key={n}
@@ -102,7 +102,17 @@ export function HostLobby() {
               {n}
             </Button>
           ))}
+          <Button
+            variant={maxPass === UNLIMITED_PASS ? "primary" : "secondary"}
+            size="default"
+            onClick={() => setMaxPass(UNLIMITED_PASS)}
+          >
+            無制限
+          </Button>
         </div>
+        {maxPass === UNLIMITED_PASS && (
+          <span className="text-sm text-gray-500">脱落なし。全員が上がるまで続きます。</span>
+        )}
       </div>
 
       {/* CPUの強さ */}

@@ -12,7 +12,7 @@ import { createDeck, cardId, cardsEqual, SUITS, type Card } from './cards'
 import { shuffle, deal, type Rng } from './deal'
 import { initBoard, place, placeForced, type BoardState, type StartMode } from './board'
 import { isPlayable } from './playable'
-import { willEliminateOnPass, isValidMaxPass } from './pass'
+import { willEliminateOnPass, isValidMaxPass, isUnlimitedPass } from './pass'
 
 /** プレイヤーの状態。 */
 export type PlayerStatus = 'playing' | 'finished' | 'eliminated'
@@ -83,7 +83,7 @@ function removeStartingSevens(
 export function initGame(opts: InitGameOptions): GameState {
   const { players, maxPass, startMode, rng } = opts
   if (!isValidMaxPass(maxPass)) {
-    throw new Error(`maxPass must be 1..5: ${maxPass}`)
+    throw new Error(`maxPass must be 1..5 or 0 (unlimited): ${maxPass}`)
   }
   const playerCount = players.length
 
@@ -224,7 +224,7 @@ export function pass(state: GameState, playerId: string): GameState {
     throw new Error(`Not ${playerId}'s turn`)
   }
 
-  if (willEliminateOnPass(player)) {
+  if (willEliminateOnPass(player, state.maxPass)) {
     const board = placeForced(state.board, player.hand)
     const players = withPlayer(state.players, player.seat, {
       hand: [],
@@ -234,8 +234,10 @@ export function pass(state: GameState, playerId: string): GameState {
     return advanceTurn({ ...state, players, board })
   }
 
-  const passesLeft = player.passesLeft - 1
-  const players = withPlayer(state.players, player.seat, { passesLeft })
+  // 無制限（maxPass=0）は残数を減らさない（表示・脱落なし）。有限は1減らす。
+  const players = isUnlimitedPass(state.maxPass)
+    ? state.players
+    : withPlayer(state.players, player.seat, { passesLeft: player.passesLeft - 1 })
   return advanceTurn({ ...state, players })
 }
 

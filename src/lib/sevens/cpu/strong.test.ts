@@ -12,7 +12,7 @@ const c = (suit: Card['suit'], rank: Card['rank']): Card => ({ suit, rank })
 function makeState(
   hands: Card[][],
   board: BoardState = initBoard('diamond7'),
-  opts?: { passesLeft?: number },
+  opts?: { passesLeft?: number; maxPass?: number },
 ): GameState {
   const players: Player[] = hands.map((hand, seat) => ({
     id: `p${seat}`,
@@ -22,7 +22,14 @@ function makeState(
     passesLeft: opts?.passesLeft ?? 3,
     status: 'playing',
   }))
-  return { players, board, currentSeat: 0, phase: 'playing', startMode: 'diamond7', maxPass: 5 }
+  return {
+    players,
+    board,
+    currentSeat: 0,
+    phase: 'playing',
+    startMode: 'diamond7',
+    maxPass: opts?.maxPass ?? 5,
+  }
 }
 
 describe('decideStrong', () => {
@@ -50,6 +57,16 @@ describe('decideStrong', () => {
   it('パス残数が少ないときは脱落回避のため止めない（必ず出す）', () => {
     const board: BoardState = { s: [], h: [], d: [7], c: [] }
     const state = makeState([[c('d', 6), c('h', 3)], [c('d', 5)]], board, { passesLeft: 1 })
+    expect(decideStrong(state, 'p0')).toEqual({ type: 'play', card: c('d', 6) })
+  })
+
+  it('無制限モード(maxPass=0)では温存せず必ず出す（膠着回避）', () => {
+    // 有限なら止める状況（上と同じ）でも、無制限では出せる手を必ず出す。
+    const board: BoardState = { s: [], h: [], d: [7], c: [] }
+    const state = makeState([[c('d', 6), c('h', 3)], [c('d', 5)]], board, {
+      passesLeft: 3,
+      maxPass: 0,
+    })
     expect(decideStrong(state, 'p0')).toEqual({ type: 'play', card: c('d', 6) })
   })
 
@@ -82,6 +99,27 @@ describe('全員CPU（強）・混在で対局が最後まで進む', () => {
     expect(state.players.every((p) => p.status === 'finished' || p.status === 'eliminated')).toBe(
       true,
     )
+  })
+
+  it.each([1, 2, 7, 2024])('無制限パス(maxPass=0)でも全員強で膠着せず終局する seed=%i', (seed) => {
+    let state = initGame({
+      players: ['a', 'b', 'c', 'd'].map((id) => ({ id, name: id.toUpperCase() })),
+      maxPass: 0,
+      startMode: 'all7',
+      rng: seededRng(seed),
+    })
+    let guard = 0
+    while (state.phase === 'playing' && guard++ < 10000) {
+      const player = currentPlayer(state)
+      const action = decideStrong(state, player.id)
+      state =
+        action.type === 'play'
+          ? playCard(state, player.id, action.card)
+          : pass(state, player.id)
+    }
+    expect(state.phase).toBe('ended')
+    // 無制限なので脱落は起きず、全員が上がって終わる。
+    expect(state.players.every((p) => p.status === 'finished')).toBe(true)
   })
 
   it.each([3, 11, 42])('seed=%i で弱/中/強 混在でも終局する', (seed) => {

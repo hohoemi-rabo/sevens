@@ -54,7 +54,7 @@ export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "er
 /** ホストのみが指定する開始オプション。CPU強さの思考ロジック実装は #12。 */
 export interface StartOptions {
   readonly seed?: number;
-  readonly maxPass?: number; // 1..5（既定3）
+  readonly maxPass?: number; // 1..5（既定3）／0=無制限（脱落なし）
   readonly startMode?: StartMode; // 'diamond7' | 'all7'（既定 'all7'）
   readonly fillWithCpu?: boolean;
   readonly cpuStrength?: CpuStrength; // 'weak'|'medium'|'strong'（既定 'weak'）

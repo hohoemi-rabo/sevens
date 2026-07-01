@@ -15,6 +15,8 @@ export interface ActionButtonsProps {
   onWait: () => void
   /** 自分の残りパス回数（ボタンに表示）。 */
   passesLeft: number
+  /** パス無制限（脱落なし）モードか。true なら残数の代わりに「無制限」を表示。 */
+  unlimitedPass?: boolean
   mySeat: number
   myName: string
 }
@@ -23,6 +25,7 @@ export default function ActionButtons({
   onPass,
   onWait,
   passesLeft,
+  unlimitedPass = false,
   mySeat,
   myName,
 }: ActionButtonsProps) {
@@ -35,7 +38,9 @@ export default function ActionButtons({
           className="min-h-tap min-w-[140px] rounded-xl bg-amber-600 px-6 py-3 text-xl font-bold text-white shadow-md transition-colors hover:bg-amber-500"
         >
           パス
-          <span className="ml-2 text-base font-normal">（残り{passesLeft}回）</span>
+          <span className="ml-2 text-base font-normal">
+            （残り{unlimitedPass ? "無制限" : `${passesLeft}回`}）
+          </span>
         </button>
 
         <div className="flex items-center gap-3">
