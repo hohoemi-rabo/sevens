@@ -11,6 +11,7 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "cards:generate": "node scripts/generate-cards.mjs",
+    "cards:special": "node scripts/generate-special-cards.mjs",
     "avatars:generate": "node scripts/generate-avatars.mjs"
   },
   "dependencies": {
