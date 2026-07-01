@@ -41,27 +41,38 @@ app.prepare().then(() => {
 
   /**
    * 適用前後の状態を比較して、新たに上がった/脱落した席を個別イベントで通知する
-   * （音声・拍手などの演出フック・#14/#17 用）。状態同期そのものは game:state が担う。
+   * （音声・拍手などの演出フック・#14/#17 用）。検出は GameModule に委譲（store.transitions）。
+   * 状態同期そのものは game:state が担う。
    */
   const emitTransitions = (roomId: RoomId, before: GameState | null, after: GameState): void => {
     if (!before) return;
-    for (const p of after.players) {
-      const prev = before.players.find((q) => q.seat === p.seat);
-      if (!prev) continue;
-      if (prev.status !== "finished" && p.status === "finished") {
-        io.to(roomId).emit("player:finish", { seat: p.seat, rank: p.rank });
-      }
-      if (prev.status !== "eliminated" && p.status === "eliminated") {
-        io.to(roomId).emit("player:eliminated", { seat: p.seat, eliminatedOrder: p.eliminatedOrder });
+    for (const t of store.transitions(before, after)) {
+      if (t.type === "finish") {
+        io.to(roomId).emit("player:finish", { seat: t.seat, rank: t.rank });
+      } else {
+        io.to(roomId).emit("player:eliminated", { seat: t.seat, eliminatedOrder: t.order });
       }
     }
+  };
+
+  /**
+   * 状態配信のシーム。全公開ゲーム（7並べ）は部屋一括で1つの view を配る。
+   * 席ごとに中身が異なるゲーム（神経衰弱・viewIsPublic=false）は、フェーズ3で
+   * 席→socket を引いて getView(state, seat) を個別配信する（そのときここを分岐実装する）。
+   */
+  const emitState = (roomId: RoomId, state: GameState): void => {
+    if (!store.viewIsPublic) {
+      // フェーズ1では通らない（7並べは全公開）。未実装のまま非公開ゲームを繋いだら早期に気づけるよう明示的に失敗させる。
+      throw new Error("per-seat view distribution is not implemented yet (phase 3)");
+    }
+    io.to(roomId).emit("game:state", store.viewFor(state, 0));
   };
 
   const broadcast = (roomId: RoomId): void => {
     const state = store.getState(roomId);
     if (!state) return;
-    io.to(roomId).emit("game:state", state);
-    if (state.phase === "ended") io.to(roomId).emit("game:end", state);
+    emitState(roomId, state);
+    if (store.isFinished(state)) io.to(roomId).emit("game:end", state);
   };
 
   // CPUの思考演出の間（ms）。CPU_DELAY_MS env で上書き（テスト/開発は 0）。既定 0.8〜1.8s（§3.4）。
@@ -80,8 +91,8 @@ app.prepare().then(() => {
       const r = store.stepAuto(roomId);
       if (!r.acted || !r.state) return; // 接続中の人間の手番 / 終局 / 該当なしで停止
       emitTransitions(roomId, before, r.state);
-      io.to(roomId).emit("game:state", r.state);
-      if (r.state.phase === "ended") {
+      emitState(roomId, r.state);
+      if (store.isFinished(r.state)) {
         io.to(roomId).emit("game:end", r.state);
         return;
       }
@@ -103,7 +114,7 @@ app.prepare().then(() => {
       }
       emitTransitions(data.roomId, before, res.value);
       broadcast(data.roomId); // 人間の手は即時反映
-      if (res.value.phase !== "ended") driveAutoTimed(data.roomId); // CPUは一手ずつ遅延
+      if (!store.isFinished(res.value)) driveAutoTimed(data.roomId); // CPUは一手ずつ遅延
     };
 
     socket.on("room:create", ({ name }: { name: string }, ack?: (res: unknown) => void) => {
