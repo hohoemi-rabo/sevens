@@ -1,17 +1,17 @@
 // サーバー権威のセッションコア（純粋・socket/next 非依存 / docs/10）。
 // 部屋・席・ゲーム進行をメモリ上で管理する（DB無し）。socket グルー（server.ts）は
-// これを薄く呼ぶだけ。ゲーム進行は GameModule 越しに行う（this.module）＝土台はゲームの中身を
-// 知らない（REQUIREMENTS_platform.md §1.1）。不正アクションは module.handleAction の throw を
-// 捕まえて AdapterError に翻訳する。フェーズ1では module は sevensModule 固定（唯一のゲーム）。
+// これを薄く呼ぶだけ。ゲーム進行は GameModule 越しに行う＝土台はゲームの中身を知らない
+// （REQUIREMENTS_platform.md §1.1）。マルチゲーム化: room.gameId で module を解決する（MODULES）。
 //
-// 部屋・席・token・再接続は汎用。ゲーム固有の配札/手番/終局判定/遷移検出は module へ委譲する。
+// 部屋・席・token・再接続は汎用。ゲーム固有の配札/手番/終局判定/秘匿(getView)/遷移検出は module へ委譲。
 
-import { type GameState } from "@/lib/sevens/state";
 import { isValidMaxPass } from "@/lib/sevens/pass";
 import { type StartMode } from "@/lib/sevens/board";
-import { type Action, type CpuStrength } from "@/lib/sevens/cpu";
+import { type CpuStrength } from "@/lib/sevens/cpu";
 import { sevensModule } from "@/lib/sevens/module";
-import type { GameTransition } from "@/lib/platform/gameModule";
+import { concentrationModule } from "@/lib/concentration/module";
+import { type ConcentrationConfig, MODE_CLASSROOM, isValidPairCount } from "@/lib/concentration/board";
+import type { GameModule, GameTransition } from "@/lib/platform/gameModule";
 import type {
   AdapterError,
   AdapterErrorCode,
@@ -42,6 +42,14 @@ const ERR_MESSAGE: Readonly<Record<AdapterErrorCode, string>> = {
 };
 const err = (code: AdapterErrorCode): Err => ({ ok: false, error: { code, message: ERR_MESSAGE[code] } });
 
+/** 型を消したゲームモジュール（レジストリ用）。状態/行動/view/config を unknown 扱いで束ねる。 */
+type ErasedModule = GameModule<unknown, unknown, unknown, unknown>;
+/** gameId → モジュール。フェーズ3で神経衰弱を登録。二重キャストは型消去のための局所的な逃げ。 */
+const MODULES: Readonly<Record<string, ErasedModule>> = {
+  sevens: sevensModule as unknown as ErasedModule,
+  concentration: concentrationModule as unknown as ErasedModule,
+};
+
 const SEATS: readonly Seat[] = [0, 1, 2, 3];
 const DEFAULT_MAX_PASS = 3;
 const DEFAULT_START_MODE: StartMode = "all7"; // シニア向け既定（7を全部並べてスタート）
@@ -57,23 +65,21 @@ interface SeatSlot {
   connected: boolean;
   token: ClientToken;
   socketId: string | null; // グルーが束ねる（#13 シーム）
-  /** CPU席の強さ（人間席は null）。stepAuto が strategyFor で思考を解決する。 */
+  /** CPU席の強さ（人間席は null）。stepAuto が decideAuto で思考を解決する。 */
   cpuStrength: CpuStrength | null;
 }
 
 interface Room {
   roomId: RoomId;
   passcode: Passcode;
-  /** どのゲームか（フェーズ1は 'sevens' 固定）。将来のマルチゲームで module を引くキー。 */
+  /** どのゲームか（'sevens' | 'concentration'）。MODULES を引くキー。 */
   gameId: string;
   hostSeat: Seat;
   seats: (SeatSlot | null)[]; // length 4, index === seat
-  state: GameState | null;
+  state: unknown; // ゲーム状態（module ごとに型が違うので不透明に持つ）
   started: boolean;
-  maxPass: number;
-  startMode: StartMode;
-  /** A-Kループ（ローカルルール）。rematch で同設定を引き継ぐため保持する。 */
-  wrapAround: boolean;
+  /** 開始設定（per-game・opaque）。rematch で同設定を引き継ぐため保持する。 */
+  config: unknown;
   seed: number | null;
 }
 
@@ -83,8 +89,10 @@ const seatPlayerId = (seat: Seat): string => `p${seat}`;
 
 export class RoomStore {
   private readonly rooms = new Map<RoomId, Room>();
-  // 差し込み式ゲームモジュール。フェーズ1は 7並べ固定。マルチゲーム化時は room.gameId で解決する。
-  private readonly module = sevensModule;
+
+  private moduleFor(room: Room): ErasedModule {
+    return MODULES[room.gameId] ?? MODULES.sevens;
+  }
 
   private freshPasscode(): Passcode {
     const taken = new Set([...this.rooms.values()].map((r) => r.passcode));
@@ -126,14 +134,12 @@ export class RoomStore {
     this.rooms.set(roomId, {
       roomId,
       passcode,
-      gameId,
+      gameId: MODULES[gameId] ? gameId : "sevens", // 未知の gameId は安全側で sevens
       hostSeat: 0,
       seats,
       state: null,
       started: false,
-      maxPass: DEFAULT_MAX_PASS,
-      startMode: DEFAULT_START_MODE,
-      wrapAround: false,
+      config: null,
       seed: null,
     });
     return ok({ roomId, passcode, seat: 0, token });
@@ -178,64 +184,75 @@ export class RoomStore {
     }
   }
 
+  /** StartOptions から gameId 別の開始設定を組む（不正値は INVALID_OPTIONS）。 */
+  private buildConfig(gameId: string, opts?: StartOptions): Result<unknown> {
+    if (gameId === "concentration") {
+      const c = opts?.concentration ?? {};
+      const config: ConcentrationConfig = {
+        pairCount: c.pairCount ?? MODE_CLASSROOM.pairCount,
+        specialRatio: c.specialRatio ?? MODE_CLASSROOM.specialRatio,
+        shuffleSwapPairs: c.shuffleSwapPairs ?? MODE_CLASSROOM.shuffleSwapPairs,
+        highValueRatio: c.highValueRatio ?? MODE_CLASSROOM.highValueRatio,
+      };
+      if (!isValidPairCount(config.pairCount)) return err("INVALID_OPTIONS");
+      return ok(config);
+    }
+    // sevens（既定）
+    const maxPass = opts?.maxPass ?? DEFAULT_MAX_PASS;
+    if (!isValidMaxPass(maxPass)) return err("INVALID_OPTIONS");
+    return ok({ maxPass, startMode: opts?.startMode ?? DEFAULT_START_MODE, wrapAround: opts?.wrapAround ?? false });
+  }
+
   /** 現在の席編成で配り直して room.state を作る（startGame/rematch 共通）。席は埋まっている前提。 */
-  private dealInto(
-    room: Room,
-    maxPass: number,
-    startMode: StartMode,
-    wrapAround: boolean,
-    seed: number,
-  ): GameState {
+  private dealInto(room: Room, config: unknown, seed: number): unknown {
     const players = SEATS.map((s) => {
       const slot = room.seats[s]!; // fill 後は全席埋まる
       return { id: slot.playerId, name: slot.name };
     });
-    room.maxPass = maxPass;
-    room.startMode = startMode;
-    room.wrapAround = wrapAround;
+    room.config = config;
     room.seed = seed;
     room.started = true;
-    room.state = this.module.createInitialState(players, { maxPass, startMode, wrapAround }, seed);
+    room.state = this.moduleFor(room).createInitialState(players, config, seed);
     return room.state;
   }
 
-  startGame(roomId: RoomId, opts?: StartOptions): Result<GameState> {
+  startGame(roomId: RoomId, opts?: StartOptions): Result<unknown> {
     const room = this.rooms.get(roomId);
     if (!room) return err("ROOM_NOT_FOUND");
     if (room.started) return err("GAME_ALREADY_STARTED");
-    const maxPass = opts?.maxPass ?? DEFAULT_MAX_PASS;
-    if (!isValidMaxPass(maxPass)) return err("INVALID_OPTIONS");
-    const startMode = opts?.startMode ?? DEFAULT_START_MODE;
-    const wrapAround = opts?.wrapAround ?? false;
+    const cfg = this.buildConfig(room.gameId, opts);
+    if (!cfg.ok) return cfg;
     // 空席は安全側でCPU補完（4席必ず埋める）。CPU強さはホスト指定（既定 weak）。
     this.fillWithCpu(roomId, opts?.cpuStrength ?? DEFAULT_CPU);
     const seed = opts?.seed ?? Math.floor(Math.random() * 0x7fffffff);
-    return ok(this.dealInto(room, maxPass, startMode, wrapAround, seed));
+    return ok(this.dealInto(room, cfg.value, seed));
   }
 
   /**
-   * 同じ部屋・同じ席編成・同じ設定（maxPass/startMode/CPU強さ）で再戦する（#17「もう一回」）。
-   * 終局後のみ可。新しい seed で配り直すので毎回ちがう手札になる。
+   * 同じ部屋・同じ席編成・同じ設定で再戦する（#17「もう一回」）。
+   * 終局後のみ可。新しい seed で配り直すので毎回ちがう場になる。
    */
-  rematch(roomId: RoomId): Result<GameState> {
+  rematch(roomId: RoomId): Result<unknown> {
     const room = this.rooms.get(roomId);
     if (!room) return err("ROOM_NOT_FOUND");
-    if (!room.started || room.state?.phase !== "ended") return err("GAME_NOT_STARTED");
+    if (!room.started || room.state == null || !this.moduleFor(room).isFinished(room.state)) {
+      return err("GAME_NOT_STARTED");
+    }
     room.started = false; // dealInto が再度 true にする
     const seed = Math.floor(Math.random() * 0x7fffffff);
-    return ok(this.dealInto(room, room.maxPass, room.startMode, room.wrapAround, seed));
+    return ok(this.dealInto(room, room.config, seed));
   }
 
-  applyPlayerAction(roomId: RoomId, seat: Seat, action: Action): Result<GameState> {
+  applyPlayerAction(roomId: RoomId, seat: Seat, action: unknown): Result<unknown> {
     const room = this.rooms.get(roomId);
     if (!room) return err("ROOM_NOT_FOUND");
-    if (!room.state || !room.started) return err("GAME_NOT_STARTED");
+    if (room.state == null || !room.started) return err("GAME_NOT_STARTED");
     const slot = room.seats[seat];
     if (!slot) return err("ILLEGAL_ACTION");
     // 席はサーバー束縛を使う（自己申告を信用しない）。slot.playerId で本人を特定する。
-    // 手番外・非保持・出せない札は module.handleAction が throw するので捕まえて翻訳する。
+    // 手番外・不正な手は module.handleAction が throw するので捕まえて翻訳する。
     try {
-      const next = this.module.handleAction(room.state, slot.playerId, action);
+      const next = this.moduleFor(room).handleAction(room.state, slot.playerId, action);
       room.state = next;
       return ok(next);
     } catch {
@@ -244,37 +261,34 @@ export class RoomStore {
   }
 
   /**
-   * 自動席（CPU、または切断中の人間＝CPU代行）の「次の一手」だけ進める。
-   * 接続中の人間の手番・終局・該当なしは acted:false（停止）。一手ずつの思考演出に使う（#13）。
+   * 自動席の「次の一手」だけ進める。対象＝CPU / 切断中の人間（代行）/ 手番の人間でも
+   * autoResolvable な状態（神経衰弱の「見せてから伏せる」＝サーバー確定）。
+   * 接続中の人間の通常手番・終局・該当なしは acted:false（停止）。一手ずつの演出に使う。
    */
-  stepAuto(roomId: RoomId): { state: GameState | null; acted: boolean } {
+  stepAuto(roomId: RoomId): { state: unknown; acted: boolean } {
     const room = this.rooms.get(roomId);
-    if (!room?.state) return { state: null, acted: false };
+    if (room?.state == null) return { state: null, acted: false };
+    const mod = this.moduleFor(room);
     const state = room.state;
-    if (this.module.isFinished(state)) return { state, acted: false };
-    const seat = this.module.currentSeat(state);
+    if (mod.isFinished(state)) return { state, acted: false };
+    const seat = mod.currentSeat(state);
     if (seat === null) return { state, acted: false };
     const slot = room.seats[seat];
-    const auto = !!slot && (slot.isCpu || !slot.connected); // 切断中の人間は CPU が代行
-    if (!auto) return { state, acted: false }; // 接続中の人間の手番で停止
-    const action = this.module.decideAuto(state, slot.playerId, slot.cpuStrength ?? DEFAULT_CPU);
+    if (!slot) return { state, acted: false };
+    const autoSeat = slot.isCpu || !slot.connected; // 切断中の人間は CPU が代行
+    if (!autoSeat && !mod.autoResolvable(state)) return { state, acted: false }; // 接続中の人間の通常手番で停止
+    const action = mod.decideAuto(state, slot.playerId, slot.cpuStrength ?? DEFAULT_CPU);
     try {
-      const next = this.module.handleAction(state, slot.playerId, action);
+      const next = mod.handleAction(state, slot.playerId, action);
       room.state = next;
       return { state: next, acted: true };
     } catch {
-      // 思考が万一不正手を返したら安全側で pass にフォールバック。
-      try {
-        room.state = this.module.handleAction(state, slot.playerId, { type: "pass" });
-        return { state: room.state, acted: true };
-      } catch {
-        return { state, acted: false };
-      }
+      return { state, acted: false }; // 思考が不正手を返したら安全側で停止（ゲーム固有フォールバックは持たない）
     }
   }
 
-  /** 自動席が続く限りまとめて進める（接続中の人間席・終局で停止）。最終 state を返す（無進行は null）。 */
-  advanceAuto(roomId: RoomId): GameState | null {
+  /** 自動席が続く限りまとめて進める（接続中の人間の通常手番・終局で停止）。最終 state を返す（無進行は null）。 */
+  advanceAuto(roomId: RoomId): unknown {
     let advanced = false;
     let guard = 0;
     while (guard++ < 3000) {
@@ -314,7 +328,7 @@ export class RoomStore {
   }
 
   /** 再接続。token 検証のうえ席を再束縛し、現在の state を返す（未開始なら null）。 */
-  reconnect(roomId: RoomId, seat: Seat, token: ClientToken, socketId: string): Result<GameState | null> {
+  reconnect(roomId: RoomId, seat: Seat, token: ClientToken, socketId: string): Result<unknown> {
     const room = this.rooms.get(roomId);
     if (!room) return err("ROOM_NOT_FOUND");
     const slot = room.seats[seat];
@@ -335,30 +349,47 @@ export class RoomStore {
     });
   }
 
-  getState(roomId: RoomId): GameState | null {
+  getState(roomId: RoomId): unknown {
     return this.rooms.get(roomId)?.state ?? null;
   }
 
-  // --- モジュール委譲（グルー server.ts が配信・演出に使う） ---
+  /** 現在つながっている席とその socketId（席ごと配信＝神経衰弱の秘匿に使う）。 */
+  seatSockets(roomId: RoomId): { seat: Seat; socketId: string }[] {
+    const room = this.rooms.get(roomId);
+    if (!room) return [];
+    return SEATS.flatMap((s) => {
+      const id = room.seats[s]?.socketId;
+      return id ? [{ seat: s, socketId: id }] : [];
+    });
+  }
 
-  /** 終局したか（module へ委譲）。 */
-  isFinished(state: GameState): boolean {
-    return this.module.isFinished(state);
+  // --- モジュール委譲（グルー server.ts が配信・演出に使う。gameId で module を解決する） ---
+
+  /** 終局したか（現在の state を module で判定）。 */
+  isFinished(roomId: RoomId): boolean {
+    const room = this.rooms.get(roomId);
+    if (room?.state == null) return false;
+    return this.moduleFor(room).isFinished(room.state);
+  }
+
+  /** 状態が全公開か（true=部屋一括配信可・7並べ。false=席ごとに getView して個別配信・神経衰弱）。 */
+  viewIsPublic(roomId: RoomId): boolean {
+    const room = this.rooms.get(roomId);
+    return room ? this.moduleFor(room).viewIsPublic : true;
+  }
+
+  /** 指定席から見える可視状態（7並べは恒等・神経衰弱は中身を秘匿）。state 未生成なら null。 */
+  viewFor(roomId: RoomId, seat: Seat): unknown {
+    const room = this.rooms.get(roomId);
+    if (room?.state == null) return null;
+    return this.moduleFor(room).getView(room.state, seat);
   }
 
   /** 状態遷移で新たに起きた出来事（finish/eliminated 等）。演出イベントの導出に使う。 */
-  transitions(before: GameState, after: GameState): readonly GameTransition[] {
-    return this.module.transitions(before, after);
-  }
-
-  /** 状態が全公開か（true=部屋一括配信可・7並べ）。false は席ごとに getView して個別配信。 */
-  get viewIsPublic(): boolean {
-    return this.module.viewIsPublic;
-  }
-
-  /** 指定席から見える可視状態（7並べは恒等）。神経衰弱の中身秘匿はここで効く（フェーズ3）。 */
-  viewFor(state: GameState, seat: Seat): GameState {
-    return this.module.getView(state, seat);
+  transitions(roomId: RoomId, before: unknown, after: unknown): readonly GameTransition[] {
+    const room = this.rooms.get(roomId);
+    if (!room || before == null) return [];
+    return this.moduleFor(room).transitions(before, after);
   }
 
   removeRoom(roomId: RoomId): void {

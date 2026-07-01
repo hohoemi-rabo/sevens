@@ -1,14 +1,16 @@
 // 通信層の共通インターフェースとワイヤ型（REQUIREMENTS §6.2, §7.1, §7.3 / docs/10）。
 // ゲームロジック層から分離した「差し替え可能な通信層」の契約。LocalAdapter（Socket.io）と
-// 将来の RemoteAdapter（クラウド）が同じ SevensAdapter を実装する。
-// ペイロードはすべて JSONシリアライズ可能（GameState はプレーンデータ）。
+// 将来の RemoteAdapter（クラウド）が同じ契約を実装する。ペイロードはすべて JSONシリアライズ可能。
 //
-// 7並べはアクションが play/pass の2種だけなので、麻雀（流用元）の多彩なアクションより大幅に
-// シンプル。rematch/dissolve/onDissolved は #17（もう一回・解散）で追加済み。
+// マルチゲーム（フェーズ3）: アクションと配信状態はゲームごとに異なるため union で持つ。
+// 7並べ=play/pass・全公開の GameState、神経衰弱=flip/resolve/swap/peek・席ごとに秘匿された ConcentrationView。
 
 import type { Action, CpuStrength } from "@/lib/sevens/cpu/types";
 import type { GameState } from "@/lib/sevens/state";
 import type { StartMode } from "@/lib/sevens/board";
+import type { CAction } from "@/lib/concentration/state";
+import type { ConcentrationView } from "@/lib/concentration/module";
+import type { ConcentrationConfig } from "@/lib/concentration/board";
 
 export type RoomId = string;
 export type Passcode = string; // 4桁数字（"0427" 等）
@@ -51,18 +53,24 @@ export interface AdapterError {
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
 
-/** ホストのみが指定する開始オプション。CPU強さの思考ロジック実装は #12。 */
+/** ホストのみが指定する開始オプション。gameId で対象ゲームを切替（既定 sevens）。 */
 export interface StartOptions {
   readonly seed?: number;
+  readonly fillWithCpu?: boolean;
+  readonly cpuStrength?: CpuStrength; // 'weak'|'medium'|'strong'（既定 'weak'）
+  // --- 7並べ（sevens）用 ---
   readonly maxPass?: number; // 1..5（既定3）／0=無制限（脱落なし）
   readonly startMode?: StartMode; // 'diamond7' | 'all7'（既定 'all7'）
   readonly wrapAround?: boolean; // A-Kループ（ローカルルール）。既定 false=標準
-  readonly fillWithCpu?: boolean;
-  readonly cpuStrength?: CpuStrength; // 'weak'|'medium'|'strong'（既定 'weak'）
+  // --- 神経衰弱（concentration）用 ---
+  readonly concentration?: Partial<ConcentrationConfig>; // pairCount 等（既定 教室モード）
 }
 
-/** クライアントが送れるアクション = ロジックの Action そのまま（play/pass）。 */
-export type PlayerAction = Action;
+/** クライアントが送れるアクション（ゲームごとの union）。7並べ=play/pass、神経衰弱=flip/resolve/swap/peek。 */
+export type PlayerAction = Action | CAction;
+
+/** サーバーから配信される可視状態（ゲームごとの union）。神経衰弱は席ごとに秘匿された view。 */
+export type GameView = GameState | ConcentrationView;
 
 export type Unsubscribe = () => void;
 
@@ -71,7 +79,7 @@ export interface SevensAdapter {
   connect(): Promise<void>;
   disconnect(): void;
 
-  createRoom(hostName: string): Promise<SeatAssignment>;
+  createRoom(hostName: string, gameId?: string): Promise<SeatAssignment>;
   joinRoom(passcode: Passcode, name: string): Promise<SeatAssignment>;
   /** 通信断後の再接続で席を再束縛する（トークンで本人確認・#13）。 */
   reconnect(roomId: RoomId, seat: Seat, token: ClientToken): Promise<void>;
@@ -81,12 +89,12 @@ export interface SevensAdapter {
   /** 部屋を解散する（ホスト限定・#17）。全員に onDissolved が届く。 */
   dissolve(): Promise<void>;
 
-  /** カードを出す/パスのプレイヤーアクション。エラーは onError 経由（fire-and-forget）。 */
+  /** プレイヤーアクション（ゲームごとの union）。エラーは onError 経由（fire-and-forget）。 */
   send(action: PlayerAction): void;
 
   onPlayers(cb: (players: readonly PlayerInfo[]) => void): Unsubscribe;
-  onState(cb: (state: GameState) => void): Unsubscribe;
-  onEnd(cb: (state: GameState) => void): Unsubscribe;
+  onState(cb: (state: GameView) => void): Unsubscribe;
+  onEnd(cb: (state: GameView) => void): Unsubscribe;
   onError(cb: (err: AdapterError) => void): Unsubscribe;
   onConnectionChange(cb: (status: ConnectionStatus) => void): Unsubscribe;
   /** 部屋が解散されたとき（ホストの dissolve）に全員へ通知（#17）。 */

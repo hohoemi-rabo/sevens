@@ -59,7 +59,7 @@ describe("RoomStore: 部屋作成", () => {
     store.fillWithCpu(roomId);
     store.startGame(roomId, { seed: 1 });
     for (const p of store.getPlayers(roomId)) expect(p).not.toHaveProperty("passcode");
-    expect(store.getState(roomId)).not.toHaveProperty("passcode");
+    expect((store.getState(roomId) as GameState | null)).not.toHaveProperty("passcode");
   });
 });
 
@@ -120,13 +120,13 @@ describe("RoomStore: CPU補完・開始", () => {
     expect(res.ok).toBe(true);
     // 人間席(0)も機械応答で進め、strategyFor 経由でも終局に至ることを確認。
     let guard = 0;
-    while (store.getState(roomId)!.phase !== "ended" && guard++ < 2000) {
+    while ((store.getState(roomId) as GameState | null)!.phase !== "ended" && guard++ < 2000) {
       store.advanceAuto(roomId);
-      const st = store.getState(roomId)!;
+      const st = (store.getState(roomId) as GameState | null)!;
       if (st.phase === "ended") break;
       store.applyPlayerAction(roomId, st.currentSeat, decideWeak(st, `p${st.currentSeat}`));
     }
-    expect(store.getState(roomId)!.phase).toBe("ended");
+    expect((store.getState(roomId) as GameState | null)!.phase).toBe("ended");
   });
 
   it("同じ seed なら GameState は決定的", () => {
@@ -178,24 +178,24 @@ describe("RoomStore: サーバー権威", () => {
     const store = new RoomStore();
     const { roomId } = created(store);
     store.startGame(roomId, { seed: 7 });
-    const before = store.getState(roomId)!;
+    const before = (store.getState(roomId) as GameState | null)!;
     const wrongSeat = ((before.currentSeat + 1) % 4) as number;
     const res = store.applyPlayerAction(roomId, wrongSeat, { type: "pass" });
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.code).toBe("ILLEGAL_ACTION");
-    expect(store.getState(roomId)).toBe(before); // mutate していない
+    expect((store.getState(roomId) as GameState | null)).toBe(before); // mutate していない
   });
 
   it("手番者の合法手は受理され、状態が進む", () => {
     const store = new RoomStore();
     const { roomId } = created(store);
     store.startGame(roomId, { seed: 7 });
-    const before = store.getState(roomId)!;
+    const before = (store.getState(roomId) as GameState | null)!;
     const seat = before.currentSeat;
     const action = decideWeak(before, `p${seat}`);
     const res = store.applyPlayerAction(roomId, seat, action);
     expect(res.ok).toBe(true);
-    expect(store.getState(roomId)).not.toBe(before); // 新しい状態に置き換わった
+    expect((store.getState(roomId) as GameState | null)).not.toBe(before); // 新しい状態に置き換わった
   });
 });
 
@@ -208,10 +208,10 @@ describe("RoomStore: ヘッドレス1局", () => {
     store.startGame(roomId, { seed });
 
     let guard = 0;
-    while (store.getState(roomId)!.phase !== "ended" && guard++ < 2000) {
+    while ((store.getState(roomId) as GameState | null)!.phase !== "ended" && guard++ < 2000) {
       // CPU（自動席）を人間の手番 or 終局まで進める。
       store.advanceAuto(roomId);
-      let st = store.getState(roomId)!;
+      let st = (store.getState(roomId) as GameState | null)!;
       expect(totalCards(st)).toBe(52);
       expect(new Set(allCardIds(st)).size).toBe(52);
       if (st.phase === "ended") break;
@@ -219,11 +219,11 @@ describe("RoomStore: ヘッドレス1局", () => {
       const seat = st.currentSeat;
       const res = store.applyPlayerAction(roomId, seat, decideWeak(st, `p${seat}`));
       expect(res.ok).toBe(true);
-      st = store.getState(roomId)!;
+      st = (store.getState(roomId) as GameState | null)!;
       expect(totalCards(st)).toBe(52);
       expect(new Set(allCardIds(st)).size).toBe(52);
     }
-    expect(store.getState(roomId)!.phase).toBe("ended");
+    expect((store.getState(roomId) as GameState | null)!.phase).toBe("ended");
   });
 });
 
@@ -231,9 +231,9 @@ describe("RoomStore: rematch（#17 もう一回）", () => {
   /** 終局まで進める（人間席は decideWeak で機械応答）。 */
   const playToEnd = (store: RoomStore, roomId: string) => {
     let guard = 0;
-    while (store.getState(roomId)!.phase !== "ended" && guard++ < 2000) {
+    while ((store.getState(roomId) as GameState | null)!.phase !== "ended" && guard++ < 2000) {
       store.advanceAuto(roomId);
-      const st = store.getState(roomId)!;
+      const st = (store.getState(roomId) as GameState | null)!;
       if (st.phase === "ended") break;
       store.applyPlayerAction(roomId, st.currentSeat, decideWeak(st, `p${st.currentSeat}`));
     }
@@ -247,7 +247,7 @@ describe("RoomStore: rematch（#17 もう一回）", () => {
 
     const res = store.rematch(roomId);
     expect(res.ok).toBe(true);
-    const st = store.getState(roomId)!;
+    const st = (store.getState(roomId) as GameState | null)!;
     expect(st.phase).toBe("playing");
     expect(st.players.every((p) => p.status === "playing")).toBe(true);
     expect(totalCards(st)).toBe(52);
@@ -261,17 +261,17 @@ describe("RoomStore: rematch（#17 もう一回）", () => {
     const store = new RoomStore();
     const { roomId } = created(store);
     store.startGame(roomId, { seed: 1, wrapAround: true });
-    expect(store.getState(roomId)!.wrapAround).toBe(true);
+    expect((store.getState(roomId) as GameState | null)!.wrapAround).toBe(true);
     playToEnd(store, roomId);
     store.rematch(roomId);
-    expect(store.getState(roomId)!.wrapAround).toBe(true);
+    expect((store.getState(roomId) as GameState | null)!.wrapAround).toBe(true);
   });
 
   it("A-Kループ未指定なら標準（wrapAround=false）", () => {
     const store = new RoomStore();
     const { roomId } = created(store);
     store.startGame(roomId, { seed: 1 });
-    expect(store.getState(roomId)!.wrapAround).toBe(false);
+    expect((store.getState(roomId) as GameState | null)!.wrapAround).toBe(false);
   });
 
   it("席編成（名前・CPU）は再戦でも保持される", () => {
@@ -310,7 +310,7 @@ describe("RoomStore: stepAuto", () => {
     store.startGame(roomId, { seed: 7 });
     // 人間席（席0）が手番になるまで CPU を進める。
     store.advanceAuto(roomId);
-    const st = store.getState(roomId)!;
+    const st = (store.getState(roomId) as GameState | null)!;
     if (st.phase !== "ended") {
       expect(st.currentSeat).toBe(0); // 人間席で停止
       expect(store.stepAuto(roomId).acted).toBe(false);
@@ -358,7 +358,7 @@ describe("RoomStore: 切断・再接続（#13シーム）", () => {
     store.bindSocket(roomId, 0, "sock-A");
     store.startGame(roomId, { seed: 7 });
     store.advanceAuto(roomId); // 人間席(0)の手番で止まる（終局でなければ）
-    const st = store.getState(roomId)!;
+    const st = (store.getState(roomId) as GameState | null)!;
     if (st.phase !== "ended" && st.currentSeat === 0) {
       store.markDisconnected("sock-A"); // 席0を切断扱いに
       expect(store.stepAuto(roomId).acted).toBe(true); // 代行で一手進む

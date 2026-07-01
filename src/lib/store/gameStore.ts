@@ -12,6 +12,7 @@ import type {
   AdapterError,
   ClientToken,
   ConnectionStatus,
+  GameView,
   Passcode,
   PlayerAction,
   PlayerInfo,
@@ -28,13 +29,15 @@ export interface GameStore {
   mySeat: Seat | null;
   myToken: ClientToken | null;
   players: readonly PlayerInfo[];
+  // フェーズ3時点では 7並べUI（components/game）だけが読むので GameState 型のまま扱う。
+  // 神経衰弱の view（ConcentrationView）は境界でここへ流れ込むが、専用UI・型付けはフェーズ4。
   gameState: GameState | null;
   lastError: AdapterError | null;
   /** ホストが部屋を解散したとき true（#17）。UI はトップへ戻す。 */
   dissolved: boolean;
 
   connect(adapter: SevensAdapter): Promise<void>;
-  createRoom(name: string): Promise<void>;
+  createRoom(name: string, gameId?: string): Promise<void>;
   joinRoom(passcode: Passcode, name: string): Promise<void>;
   start(opts?: StartOptions): Promise<void>;
   /** 同じ部屋・同設定で再戦（ホスト限定・#17）。 */
@@ -95,8 +98,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       }),
       adapter.onPlayers((players) => set({ players })),
-      adapter.onState((gameState) => set({ gameState })),
-      adapter.onEnd((gameState) => set({ gameState })),
+      // GameView（union）を受ける。フェーズ3のUIは7並べのみなので GameState として保持（下記コメント参照）。
+      adapter.onState((v: GameView) => set({ gameState: v as GameState })),
+      adapter.onEnd((v: GameView) => set({ gameState: v as GameState })),
       adapter.onError((lastError) => set({ lastError })),
       // ホストの解散通知: セッションを捨て、UI をトップへ戻すためのフラグを立てる（#17）。
       adapter.onDissolved(() => {
@@ -107,9 +111,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     await adapter.connect();
   },
 
-  async createRoom(name) {
+  async createRoom(name, gameId) {
     try {
-      const a = await requireAdapter().createRoom(name);
+      const a = await requireAdapter().createRoom(name, gameId);
       set({ roomId: a.roomId, mySeat: a.seat, myToken: a.token, passcode: a.passcode ?? null });
       saveSession({ roomId: a.roomId, seat: a.seat, token: a.token });
     } catch (e) {

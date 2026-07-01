@@ -1,18 +1,16 @@
 // カスタムサーバー: Next.js（App Router）と Socket.io を同居させる（docs/10 / REQUIREMENTS §6.2, §7.1）。
-// 純粋セッションコア（src/lib/server/session.ts）の薄いグルー。ルールは持たない。
+// 純粋セッションコア（src/lib/server/session.ts）の薄いグルー。ルールは持たない（ゲーム非依存）。
 // 起動: tsx server.ts（npm run dev / start）。状態はメモリのみ（DB無し）。
 //
-// 7並べはアクションが play/pass の2種だけ。CPU の思考遅延（演出）と切断時の代行を driveAutoTimed が担う。
+// アクションは汎用 player:action で受ける（7並べ=play/pass、神経衰弱=flip/resolve/swap/peek）。
+// 配信は viewIsPublic に応じ部屋一括／席ごと（神経衰弱の中身秘匿）。CPU/自動resolve は driveAutoTimed が担う。
 
 import { createServer } from "node:http";
 import os from "node:os";
 import next from "next";
 import { Server, type Socket } from "socket.io";
-import { type GameState } from "@/lib/sevens/state";
-import { type Card } from "@/lib/sevens/cards";
-import { type Action } from "@/lib/sevens/cpu";
 import { RoomStore } from "@/lib/server/session";
-import type { ClientToken, RoomId, Seat, StartOptions } from "@/lib/adapter/types";
+import type { ClientToken, PlayerAction, RoomId, Seat, StartOptions } from "@/lib/adapter/types";
 
 const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT ?? 3000);
@@ -44,9 +42,9 @@ app.prepare().then(() => {
    * （音声・拍手などの演出フック・#14/#17 用）。検出は GameModule に委譲（store.transitions）。
    * 状態同期そのものは game:state が担う。
    */
-  const emitTransitions = (roomId: RoomId, before: GameState | null, after: GameState): void => {
-    if (!before) return;
-    for (const t of store.transitions(before, after)) {
+  const emitTransitions = (roomId: RoomId, before: unknown, after: unknown): void => {
+    if (before == null) return;
+    for (const t of store.transitions(roomId, before, after)) {
       if (t.type === "finish") {
         io.to(roomId).emit("player:finish", { seat: t.seat, rank: t.rank });
       } else {
@@ -57,22 +55,24 @@ app.prepare().then(() => {
 
   /**
    * 状態配信のシーム。全公開ゲーム（7並べ）は部屋一括で1つの view を配る。
-   * 席ごとに中身が異なるゲーム（神経衰弱・viewIsPublic=false）は、フェーズ3で
-   * 席→socket を引いて getView(state, seat) を個別配信する（そのときここを分岐実装する）。
+   * 席ごとに中身が異なるゲーム（神経衰弱・viewIsPublic=false）は、席→socket を引いて
+   * getView(state, seat) を個別配信する＝伏せ札の中身は各端末に届かない（§2.2 カンニング防止）。
    */
-  const emitState = (roomId: RoomId, state: GameState): void => {
-    if (!store.viewIsPublic) {
-      // フェーズ1では通らない（7並べは全公開）。未実装のまま非公開ゲームを繋いだら早期に気づけるよう明示的に失敗させる。
-      throw new Error("per-seat view distribution is not implemented yet (phase 3)");
+  const emitState = (roomId: RoomId): void => {
+    if (store.viewIsPublic(roomId)) {
+      io.to(roomId).emit("game:state", store.viewFor(roomId, 0));
+      return;
     }
-    io.to(roomId).emit("game:state", store.viewFor(state, 0));
+    for (const { seat, socketId } of store.seatSockets(roomId)) {
+      io.to(socketId).emit("game:state", store.viewFor(roomId, seat));
+    }
   };
 
   const broadcast = (roomId: RoomId): void => {
-    const state = store.getState(roomId);
-    if (!state) return;
-    emitState(roomId, state);
-    if (store.isFinished(state)) io.to(roomId).emit("game:end", state);
+    if (store.getState(roomId) == null) return;
+    emitState(roomId);
+    // 終局は「終局した」合図。中身は全公開になっている（全ペア取得/上がり）ので seat0 の view で配ってよい。
+    if (store.isFinished(roomId)) io.to(roomId).emit("game:end", store.viewFor(roomId, 0));
   };
 
   // CPUの思考演出の間（ms）。CPU_DELAY_MS env で上書き（テスト/開発は 0）。既定 0.8〜1.8s（§3.4）。
@@ -89,11 +89,11 @@ app.prepare().then(() => {
       driveTimers.delete(roomId);
       const before = store.getState(roomId);
       const r = store.stepAuto(roomId);
-      if (!r.acted || !r.state) return; // 接続中の人間の手番 / 終局 / 該当なしで停止
+      if (!r.acted || r.state == null) return; // 接続中の人間の通常手番 / 終局 / 該当なしで停止
       emitTransitions(roomId, before, r.state);
-      emitState(roomId, r.state);
-      if (store.isFinished(r.state)) {
-        io.to(roomId).emit("game:end", r.state);
+      emitState(roomId);
+      if (store.isFinished(roomId)) {
+        io.to(roomId).emit("game:end", store.viewFor(roomId, 0));
         return;
       }
       driveTimers.set(roomId, setTimeout(tick, cpuDelay()));
@@ -104,7 +104,7 @@ app.prepare().then(() => {
   io.on("connection", (socket: Socket) => {
     const data = socket.data as SocketData;
 
-    const applyAndBroadcast = (action: Action): void => {
+    const applyAndBroadcast = (action: PlayerAction): void => {
       if (data.roomId === undefined || data.seat === undefined) return;
       const before = store.getState(data.roomId);
       const res = store.applyPlayerAction(data.roomId, data.seat, action);
@@ -114,11 +114,12 @@ app.prepare().then(() => {
       }
       emitTransitions(data.roomId, before, res.value);
       broadcast(data.roomId); // 人間の手は即時反映
-      if (!store.isFinished(res.value)) driveAutoTimed(data.roomId); // CPUは一手ずつ遅延
+      // 続く自動手（CPU、または神経衰弱の自動resolve＝見せてから伏せる）を一手ずつ遅延で進める。
+      if (!store.isFinished(data.roomId)) driveAutoTimed(data.roomId);
     };
 
-    socket.on("room:create", ({ name }: { name: string }, ack?: (res: unknown) => void) => {
-      const res = store.createRoom(name);
+    socket.on("room:create", ({ name, gameId }: { name: string; gameId?: string }, ack?: (res: unknown) => void) => {
+      const res = store.createRoom(name, gameId);
       if (!res.ok) {
         ack?.(res.error);
         return;
@@ -222,9 +223,8 @@ app.prepare().then(() => {
       store.removeRoom(data.roomId);
     });
 
-    // プレイヤーアクション（席はサーバー束縛を使う＝自己申告を信用しない）。
-    socket.on("player:play", ({ card }: { card: Card }) => applyAndBroadcast({ type: "play", card }));
-    socket.on("player:pass", () => applyAndBroadcast({ type: "pass" }));
+    // プレイヤーアクション（汎用・ゲーム非依存。席はサーバー束縛を使う＝自己申告を信用しない）。
+    socket.on("player:action", ({ action }: { action: PlayerAction }) => applyAndBroadcast(action));
 
     socket.on("disconnect", () => {
       // 切断を反映（席は保持）→ 参加者再配信＋切断席が手番なら CPU 代行で進める（#13）。

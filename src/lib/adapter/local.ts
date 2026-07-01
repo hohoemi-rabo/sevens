@@ -3,11 +3,11 @@
 // （送信→次の game:state で反映）。
 
 import { type Socket, io } from "socket.io-client";
-import type { GameState } from "@/lib/sevens/state";
 import type {
   AdapterError,
   ClientToken,
   ConnectionStatus,
+  GameView,
   Passcode,
   PlayerAction,
   PlayerInfo,
@@ -61,9 +61,9 @@ export class LocalAdapter implements SevensAdapter {
     this.socket.disconnect();
   }
 
-  createRoom(hostName: string): Promise<SeatAssignment> {
+  createRoom(hostName: string, gameId = "sevens"): Promise<SeatAssignment> {
     return new Promise((resolve, reject) => {
-      this.s.emit("room:create", { name: hostName }, (res: SeatAssignment | AdapterError) => {
+      this.s.emit("room:create", { name: hostName, gameId }, (res: SeatAssignment | AdapterError) => {
         if ("roomId" in res) resolve(res);
         else reject(res); // AdapterError をそのまま（code を保持）
       });
@@ -116,8 +116,8 @@ export class LocalAdapter implements SevensAdapter {
   }
 
   send(action: PlayerAction): void {
-    if (action.type === "play") this.s.emit("player:play", { card: action.card });
-    else this.s.emit("player:pass", {});
+    // ゲーム非依存の汎用アクション経路（7並べ=play/pass、神経衰弱=flip/resolve/swap/peek）。
+    this.s.emit("player:action", { action });
   }
 
   onPlayers(cb: (players: readonly PlayerInfo[]) => void): Unsubscribe {
@@ -126,14 +126,14 @@ export class LocalAdapter implements SevensAdapter {
     return () => this.socket.off("room:players", h);
   }
 
-  onState(cb: (state: GameState) => void): Unsubscribe {
-    const h = (state: GameState) => cb(state);
+  onState(cb: (state: GameView) => void): Unsubscribe {
+    const h = (state: GameView) => cb(state);
     this.s.on("game:state", h);
     return () => this.socket.off("game:state", h);
   }
 
-  onEnd(cb: (state: GameState) => void): Unsubscribe {
-    const h = (state: GameState) => cb(state);
+  onEnd(cb: (state: GameView) => void): Unsubscribe {
+    const h = (state: GameView) => cb(state);
     this.s.on("game:end", h);
     return () => this.socket.off("game:end", h);
   }

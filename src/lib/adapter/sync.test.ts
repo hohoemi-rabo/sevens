@@ -15,10 +15,15 @@ import { decideWeak } from "@/lib/sevens/cpu";
 /** server.ts と同じ責務の socket グルーを RoomStore に配線する（CPU は即時に進める）。 */
 function wireServer(io: IOServer, store: RoomStore): void {
   const broadcast = (roomId: string): void => {
-    const state = store.getState(roomId);
-    if (!state) return;
-    io.to(roomId).emit("game:state", state);
-    if (state.phase === "ended") io.to(roomId).emit("game:end", state);
+    if (store.getState(roomId) == null) return;
+    if (store.viewIsPublic(roomId)) {
+      io.to(roomId).emit("game:state", store.viewFor(roomId, 0));
+    } else {
+      for (const { seat, socketId } of store.seatSockets(roomId)) {
+        io.to(socketId).emit("game:state", store.viewFor(roomId, seat));
+      }
+    }
+    if (store.isFinished(roomId)) io.to(roomId).emit("game:end", store.viewFor(roomId, 0));
   };
   // テストは決定論を優先し、CPU を遅延なしでまとめて進めてから配信する。
   const driveAndBroadcast = (roomId: string): void => {
@@ -85,7 +90,7 @@ function wireServer(io: IOServer, store: RoomStore): void {
       store.removeRoom(data.roomId);
     });
 
-    const onAction = (action: Parameters<RoomStore["applyPlayerAction"]>[2]) => {
+    const onAction = (action: unknown) => {
       if (data.roomId === undefined || data.seat === undefined) return;
       const res = store.applyPlayerAction(data.roomId, data.seat, action);
       if (!res.ok) {
@@ -95,8 +100,7 @@ function wireServer(io: IOServer, store: RoomStore): void {
       broadcast(data.roomId);
       driveAndBroadcast(data.roomId);
     };
-    socket.on("player:play", ({ card }: { card: never }) => onAction({ type: "play", card }));
-    socket.on("player:pass", () => onAction({ type: "pass" }));
+    socket.on("player:action", ({ action }: { action: unknown }) => onAction(action));
 
     // 再接続（#13）: トークンで席を再束縛し、現状態を再送する。
     socket.on(
@@ -171,8 +175,8 @@ describe("in-process Socket.io 同期", () => {
     const b = await connect();
 
     const last: { a: GameState | null; b: GameState | null } = { a: null, b: null };
-    a.onState((s) => (last.a = s));
-    b.onState((s) => (last.b = s));
+    a.onState((s) => (last.a = s as GameState));
+    b.onState((s) => (last.b = s as GameState));
 
     // A がホストで部屋作成、B が参加（席1）。残り2席は CPU 補完。
     const ca = await a.createRoom("Aさん");
@@ -205,7 +209,7 @@ describe("in-process Socket.io 同期", () => {
 
     const last: { a: GameState | null } = { a: null };
     let lastError: string | null = null;
-    a.onState((s) => (last.a = s));
+    a.onState((s) => (last.a = s as GameState));
     // どちらの人間が誤操作側になっても拾えるよう、両者の onError を監視する。
     a.onError((e) => (lastError = e.code));
     b.onError((e) => (lastError = e.code));
@@ -232,7 +236,7 @@ describe("in-process Socket.io 同期", () => {
     const a = await connect();
     const b = await connect();
     let bLast: GameState | null = null;
-    b.onState((s) => (bLast = s));
+    b.onState((s) => (bLast = s as GameState));
 
     const ca = await a.createRoom("Aさん");
     await b.joinRoom(ca.passcode!, "Bさん");
@@ -246,12 +250,12 @@ describe("in-process Socket.io 同期", () => {
     // 新しい端末（A2）がトークンで再接続。現在の権威状態を受信する。
     const a2 = await connect();
     let a2Last: GameState | null = null;
-    a2.onState((s) => (a2Last = s));
+    a2.onState((s) => (a2Last = s as GameState));
     await a2.reconnect(ca.roomId, ca.seat, ca.token);
 
     // A2 の受信状態がサーバーの権威状態（＝B が見ている状態）と一致する。
-    await until(() => !!a2Last && serializeState(a2Last) === serializeState(store.getState(ca.roomId)!));
-    expect(serializeState(a2Last!)).toBe(serializeState(store.getState(ca.roomId)!));
+    await until(() => !!a2Last && serializeState(a2Last) === serializeState(store.getState(ca.roomId) as GameState));
+    expect(serializeState(a2Last!)).toBe(serializeState(store.getState(ca.roomId) as GameState));
     expect(serializeState(a2Last!)).toBe(serializeState(bLast!));
     // 席0（A）に戻っている＝CPU 名ではなく "Aさん"。
     expect(a2Last!.players.find((p) => p.seat === 0)!.name).toBe("Aさん");
@@ -262,8 +266,8 @@ describe("in-process Socket.io 同期", () => {
     const a = await connect();
     const b = await connect();
     const last: { a: GameState | null; b: GameState | null } = { a: null, b: null };
-    a.onState((s) => (last.a = s));
-    b.onState((s) => (last.b = s));
+    a.onState((s) => (last.a = s as GameState));
+    b.onState((s) => (last.b = s as GameState));
 
     const ca = await a.createRoom("Aさん");
     await b.joinRoom(ca.passcode!, "Bさん");
