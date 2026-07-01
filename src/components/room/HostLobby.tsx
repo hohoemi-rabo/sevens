@@ -25,11 +25,15 @@ const PASS_OPTIONS = Array.from({ length: MAX_PASS - MIN_PASS + 1 }, (_, i) => M
 export function HostLobby() {
   const passcode = useGameStore((s) => s.passcode);
   const lastError = useGameStore((s) => s.lastError);
+  const gameId = useGameStore((s) => s.gameId);
   const info = useServerInfo();
   const [maxPass, setMaxPass] = useState(3);
   const [cpuStrength, setCpuStrength] = useState<CpuStrength>("weak");
   const [wrapAround, setWrapAround] = useState(false);
+  const [pairCount, setPairCount] = useState(10); // 神経衰弱: 教室10 / フル13
   const [starting, setStarting] = useState(false);
+
+  const isConcentration = gameId === "concentration";
 
   // 他端末が開く入室URL（同一オリジンで繋がるよう、ホストのLAN URLを使う）。
   const joinUrl =
@@ -42,13 +46,17 @@ export function HostLobby() {
   const startGame = async () => {
     setStarting(true);
     useGameStore.getState().clearError();
-    await useGameStore.getState().start({
-      fillWithCpu: true,
-      maxPass,
-      startMode: "all7", // シニア向けに分かりやすい「7を全部並べてスタート」を既定に
-      wrapAround,
-      cpuStrength,
-    });
+    await useGameStore.getState().start(
+      isConcentration
+        ? { fillWithCpu: true, cpuStrength, concentration: { pairCount } }
+        : {
+            fillWithCpu: true,
+            maxPass,
+            startMode: "all7", // シニア向けに分かりやすい「7を全部並べてスタート」を既定に
+            wrapAround,
+            cpuStrength,
+          },
+    );
     if (useGameStore.getState().lastError) setStarting(false);
     // 成功時は gameState 到着 → useGotoRoomOnStart が遷移（このまま starting 表示でよい）。
   };
@@ -90,7 +98,35 @@ export function HostLobby() {
         <PlayerList />
       </div>
 
-      {/* パス回数（無制限＝脱落なし） */}
+      {/* 神経衰弱: 枚数モード */}
+      {isConcentration && (
+        <div className="flex flex-col items-center gap-2">
+          <span className="text-base">カードの枚数</span>
+          <div className="flex gap-2">
+            <Button
+              variant={pairCount === 10 ? "primary" : "secondary"}
+              size="lg"
+              onClick={() => setPairCount(10)}
+            >
+              教室（10ペア）
+            </Button>
+            <Button
+              variant={pairCount === 13 ? "primary" : "secondary"}
+              size="lg"
+              onClick={() => setPairCount(13)}
+            >
+              たっぷり（13ペア）
+            </Button>
+          </div>
+          <span className="max-w-xs text-center text-sm text-gray-500">
+            少ないほど短時間で運の要素が増えます。特殊カード（シャッフル・入れ替え・のぞき見）が混ざります。
+          </span>
+        </div>
+      )}
+
+      {/* パス回数（無制限＝脱落なし）＋ A-Kループ ＝7並べのみ */}
+      {!isConcentration && (
+      <>
       <div className="flex flex-col items-center gap-2">
         <span className="text-base">パスできる回数</span>
         <div className="flex flex-wrap justify-center gap-2">
@@ -142,6 +178,8 @@ export function HostLobby() {
             : "K と A は反対の端どうしでつながりません。"}
         </span>
       </div>
+      </>
+      )}
 
       {/* CPUの強さ */}
       <div className="flex flex-col items-center gap-2">
