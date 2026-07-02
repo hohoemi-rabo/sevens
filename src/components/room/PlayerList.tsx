@@ -4,18 +4,19 @@
 // 名前＋役割（あなた/ホスト/CPU）＋接続インジケータ。空席は「対局開始でCPUが入る」ことを示す。
 
 import { useGameStore } from "@/lib/store/gameStore";
-import { type Seat } from "@/lib/adapter/types";
 import { cn } from "@/lib/cn";
-
-const SEATS: readonly Seat[] = [0, 1, 2, 3];
 
 export function PlayerList() {
   const players = useGameStore((s) => s.players);
   const mySeat = useGameStore((s) => s.mySeat);
+  const capacity = useGameStore((s) => s.capacity);
+  // capacity 未確定（作成/入室 ack 前）は既存参加者数か4のうち大きい方で暫定表示。
+  const rows = capacity ?? Math.max(4, players.length);
+  const seats = Array.from({ length: rows }, (_, i) => i);
 
   return (
     <ul className="flex flex-col gap-2">
-      {SEATS.map((seat) => {
+      {seats.map((seat) => {
         const p = players.find((x) => x.seat === seat);
         return (
           <li

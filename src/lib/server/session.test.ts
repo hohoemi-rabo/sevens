@@ -365,3 +365,70 @@ describe("RoomStore: 切断・再接続（#13シーム）", () => {
     }
   });
 });
+
+describe("RoomStore: 席数可変（4D・神経衰弱 2〜4人）", () => {
+  const createConc = (store: RoomStore, seatCount?: number) => {
+    const res = store.createRoom("ホスト", "concentration", seatCount);
+    if (!res.ok) throw new Error(`createRoom failed: ${res.error.code}`);
+    return res.value;
+  };
+
+  it("createRoom は capacity を返し、7並べは常に4に固定される", () => {
+    const store = new RoomStore();
+    // 7並べ: seatCount を指定しても module の min=max=4 で4に丸まる。
+    const sevens = store.createRoom("H", "sevens", 2);
+    expect(sevens.ok && sevens.value.capacity).toBe(4);
+    // 神経衰弱: 2〜4を尊重。範囲外は clamp。
+    expect(createConc(store, 2).capacity).toBe(2);
+    expect(createConc(store, 3).capacity).toBe(3);
+    expect(createConc(store, 9).capacity).toBe(4); // max へ丸め
+    expect(createConc(store, 1).capacity).toBe(2); // min へ丸め
+    expect(createConc(store).capacity).toBe(4); // 未指定は maxPlayers
+  });
+
+  it("capacity=2 は 2人目まで入室でき 3人目は ROOM_FULL", () => {
+    const store = new RoomStore();
+    const { passcode } = createConc(store, 2);
+    expect(store.joinRoom(passcode, "B")).toMatchObject({ ok: true, value: { seat: 1 } });
+    const full = store.joinRoom(passcode, "C");
+    expect(full.ok).toBe(false);
+    if (!full.ok) expect(full.error.code).toBe("ROOM_FULL");
+  });
+
+  it("capacity 分だけCPU補完し、その席数で全局完走する（2席・3席）", () => {
+    for (const cap of [2, 3]) {
+      const store = new RoomStore();
+      const { roomId } = createConc(store, cap);
+      const res = store.startGame(roomId, { seed: 7, cpuStrength: "strong" });
+      expect(res.ok).toBe(true);
+      expect(store.getPlayers(roomId)).toHaveLength(cap); // capacity 席だけ埋まる
+      // ホスト席(0)は人間なので、切断扱いにして全席をCPU代行で回し終局まで到達させる。
+      store.bindSocket(roomId, 0, "host-sock");
+      store.markDisconnected("host-sock");
+      let guard = 0;
+      while (!store.isFinished(roomId) && guard++ < 5000) store.advanceAuto(roomId);
+      expect(store.isFinished(roomId)).toBe(true);
+    }
+  });
+
+  it("join の ack にも capacity が乗る", () => {
+    const store = new RoomStore();
+    const { passcode } = createConc(store, 3);
+    const j = store.joinRoom(passcode, "B");
+    expect(j.ok && j.value.capacity).toBe(3);
+  });
+});
+
+describe("RoomStore: buildConfig 健全化（4D・クランプ）", () => {
+  it("神経衰弱の割合/枚数は仕様レンジにクランプされる（異常値でも開始できる）", () => {
+    const store = new RoomStore();
+    const res = store.createRoom("H", "concentration", 2);
+    if (!res.ok) throw new Error("create failed");
+    // 異常に大きい/小さい値を渡しても INVALID_OPTIONS にならず開始できる（クランプ）。
+    const started = store.startGame(res.value.roomId, {
+      seed: 1,
+      concentration: { pairCount: 6, specialRatio: 9, shuffleSwapPairs: 99, highValueRatio: -1 },
+    });
+    expect(started.ok).toBe(true);
+  });
+});

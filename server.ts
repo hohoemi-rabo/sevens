@@ -75,10 +75,10 @@ app.prepare().then(() => {
     if (store.isFinished(roomId)) io.to(roomId).emit("game:end", store.viewFor(roomId, 0));
   };
 
-  // CPUの思考演出の間（ms）。CPU_DELAY_MS env で上書き（テスト/開発は 0）。既定 0.8〜1.8s（§3.4）。
+  // CPUの思考演出の間（ms）。CPU_DELAY_MS env で上書き（テスト/開発は 0）。既定 1.0〜2.0s（仕様§5.6「1〜2秒」）。
   const cpuDelay = (): number => {
     const env = Number(process.env.CPU_DELAY_MS);
-    return Number.isFinite(env) ? env : 800 + Math.floor(Math.random() * 1000);
+    return Number.isFinite(env) ? env : 1000 + Math.floor(Math.random() * 1000);
   };
 
   // 自動席（CPU・切断中の人間＝代行）の手を一手ずつ遅延配信する（1room1チェイン・多重起動ガード）。
@@ -118,8 +118,10 @@ app.prepare().then(() => {
       if (!store.isFinished(data.roomId)) driveAutoTimed(data.roomId);
     };
 
-    socket.on("room:create", ({ name, gameId }: { name: string; gameId?: string }, ack?: (res: unknown) => void) => {
-      const res = store.createRoom(name, gameId);
+    socket.on(
+      "room:create",
+      ({ name, gameId, seatCount }: { name: string; gameId?: string; seatCount?: number }, ack?: (res: unknown) => void) => {
+      const res = store.createRoom(name, gameId, seatCount);
       if (!res.ok) {
         ack?.(res.error);
         return;

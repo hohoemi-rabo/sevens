@@ -15,7 +15,7 @@ import type { ConcentrationConfig } from "@/lib/concentration/board";
 export type RoomId = string;
 export type Passcode = string; // 4桁数字（"0427" 等）
 export type ClientToken = string; // 席ごとの再接続トークン（#13 用シーム）
-/** 席番号 0..3。state.players[i].seat と一致する。 */
+/** 席番号 0..n-1（n=部屋の capacity・2..4）。state.players[i].seat と一致する。 */
 export type Seat = number;
 
 export interface PlayerInfo {
@@ -32,6 +32,7 @@ export interface SeatAssignment {
   readonly seat: Seat;
   readonly token: ClientToken;
   readonly passcode?: Passcode;
+  readonly capacity?: number; // 部屋の席数（2..4・PlayerList の行数に使う）
 }
 
 export type AdapterErrorCode =
@@ -79,7 +80,7 @@ export interface SevensAdapter {
   connect(): Promise<void>;
   disconnect(): void;
 
-  createRoom(hostName: string, gameId?: string): Promise<SeatAssignment>;
+  createRoom(hostName: string, gameId?: string, seatCount?: number): Promise<SeatAssignment>;
   joinRoom(passcode: Passcode, name: string): Promise<SeatAssignment>;
   /** 通信断後の再接続で席を再束縛する（トークンで本人確認・#13）。 */
   reconnect(roomId: RoomId, seat: Seat, token: ClientToken): Promise<void>;

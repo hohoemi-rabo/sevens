@@ -50,7 +50,8 @@ const MODULES: Readonly<Record<string, ErasedModule>> = {
   concentration: concentrationModule as unknown as ErasedModule,
 };
 
-const SEATS: readonly Seat[] = [0, 1, 2, 3];
+const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
+const clampInt = (v: number, lo: number, hi: number): number => clamp(Math.round(Number.isFinite(v) ? v : lo), lo, hi);
 const DEFAULT_MAX_PASS = 3;
 const DEFAULT_START_MODE: StartMode = "all7"; // シニア向け既定（7を全部並べてスタート）
 const DEFAULT_CPU: CpuStrength = "weak";
@@ -75,7 +76,8 @@ interface Room {
   /** どのゲームか（'sevens' | 'concentration'）。MODULES を引くキー。 */
   gameId: string;
   hostSeat: Seat;
-  seats: (SeatSlot | null)[]; // length 4, index === seat
+  capacity: number; // 席数（2..4・作成時に確定）。合言葉入室をこの人数で締め切る。
+  seats: (SeatSlot | null)[]; // length === capacity, index === seat
   state: unknown; // ゲーム状態（module ごとに型が違うので不透明に持つ）
   started: boolean;
   /** 開始設定（per-game・opaque）。rematch で同設定を引き継ぐため保持する。 */
@@ -116,12 +118,17 @@ export class RoomStore {
   createRoom(
     hostName: string,
     gameId = "sevens",
-  ): Result<{ roomId: RoomId; passcode: Passcode; seat: Seat; token: ClientToken }> {
+    seatCount?: number,
+  ): Result<{ roomId: RoomId; passcode: Passcode; seat: Seat; token: ClientToken; capacity: number }> {
     if (!hostName.trim()) return err("NAME_REQUIRED");
+    const resolvedGameId = MODULES[gameId] ? gameId : "sevens"; // 未知の gameId は安全側で sevens
+    const mod = MODULES[resolvedGameId];
+    // 人数は作成時に確定（module の許容 min..max へクランプ）。7並べは min=max=4 なので常に4。
+    const capacity = clampInt(seatCount ?? mod.maxPlayers, mod.minPlayers, mod.maxPlayers);
     const roomId = this.freshRoomId();
     const passcode = this.freshPasscode();
     const token = randToken();
-    const seats: (SeatSlot | null)[] = [null, null, null, null];
+    const seats: (SeatSlot | null)[] = Array.from({ length: capacity }, () => null);
     seats[0] = {
       playerId: seatPlayerId(0),
       name: hostName.trim(),
@@ -134,24 +141,25 @@ export class RoomStore {
     this.rooms.set(roomId, {
       roomId,
       passcode,
-      gameId: MODULES[gameId] ? gameId : "sevens", // 未知の gameId は安全側で sevens
+      gameId: resolvedGameId,
       hostSeat: 0,
+      capacity,
       seats,
       state: null,
       started: false,
       config: null,
       seed: null,
     });
-    return ok({ roomId, passcode, seat: 0, token });
+    return ok({ roomId, passcode, seat: 0, token, capacity });
   }
 
-  joinRoom(passcode: Passcode, name: string): Result<{ roomId: RoomId; seat: Seat; token: ClientToken }> {
+  joinRoom(passcode: Passcode, name: string): Result<{ roomId: RoomId; seat: Seat; token: ClientToken; capacity: number }> {
     if (!name.trim()) return err("NAME_REQUIRED");
     const room = [...this.rooms.values()].find((r) => r.passcode === passcode);
     if (!room) return err("WRONG_PASSCODE"); // 未存在も合言葉違いに丸める（列挙防止）
     if (room.started) return err("GAME_ALREADY_STARTED");
-    const seat = SEATS.find((s) => room.seats[s] === null);
-    if (seat === undefined) return err("ROOM_FULL");
+    const seat = room.seats.findIndex((s) => s === null); // 空席（capacity 内）を探す
+    if (seat === -1) return err("ROOM_FULL");
     const token = randToken();
     room.seats[seat] = {
       playerId: seatPlayerId(seat),
@@ -162,18 +170,18 @@ export class RoomStore {
       socketId: null,
       cpuStrength: null,
     };
-    return ok({ roomId: room.roomId, seat, token });
+    return ok({ roomId: room.roomId, seat, token, capacity: room.capacity });
   }
 
   /** 空席をCPUで埋める（冪等・占有席は変更しない）。strength は空席のCPUに割り当てる。 */
   fillWithCpu(roomId: RoomId, strength: CpuStrength = DEFAULT_CPU): void {
     const room = this.rooms.get(roomId);
     if (!room || room.started) return;
-    for (const s of SEATS) {
+    for (let s = 0; s < room.seats.length; s++) {
       if (room.seats[s] === null) {
         room.seats[s] = {
           playerId: seatPlayerId(s),
-          name: CPU_NAMES[s],
+          name: CPU_NAMES[s % CPU_NAMES.length],
           isCpu: true,
           connected: true,
           token: randToken(),
@@ -190,9 +198,10 @@ export class RoomStore {
       const c = opts?.concentration ?? {};
       const config: ConcentrationConfig = {
         pairCount: c.pairCount ?? MODE_CLASSROOM.pairCount,
-        specialRatio: c.specialRatio ?? MODE_CLASSROOM.specialRatio,
-        shuffleSwapPairs: c.shuffleSwapPairs ?? MODE_CLASSROOM.shuffleSwapPairs,
-        highValueRatio: c.highValueRatio ?? MODE_CLASSROOM.highValueRatio,
+        // ホスト由来の割合/枚数は仕様レンジにクランプ（異常値で盤面が壊れないよう健全化・§5.2-5.4）。
+        specialRatio: clamp(c.specialRatio ?? MODE_CLASSROOM.specialRatio, 0.1, 0.2),
+        shuffleSwapPairs: clampInt(c.shuffleSwapPairs ?? MODE_CLASSROOM.shuffleSwapPairs, 2, 3),
+        highValueRatio: clamp(c.highValueRatio ?? MODE_CLASSROOM.highValueRatio, 0.1, 0.2),
       };
       if (!isValidPairCount(config.pairCount)) return err("INVALID_OPTIONS");
       return ok(config);
@@ -205,9 +214,9 @@ export class RoomStore {
 
   /** 現在の席編成で配り直して room.state を作る（startGame/rematch 共通）。席は埋まっている前提。 */
   private dealInto(room: Room, config: unknown, seed: number): unknown {
-    const players = SEATS.map((s) => {
-      const slot = room.seats[s]!; // fill 後は全席埋まる
-      return { id: slot.playerId, name: slot.name };
+    const players = room.seats.map((slot) => {
+      const s = slot!; // fill 後は全席埋まる
+      return { id: s.playerId, name: s.name };
     });
     room.config = config;
     room.seed = seed;
@@ -222,7 +231,7 @@ export class RoomStore {
     if (room.started) return err("GAME_ALREADY_STARTED");
     const cfg = this.buildConfig(room.gameId, opts);
     if (!cfg.ok) return cfg;
-    // 空席は安全側でCPU補完（4席必ず埋める）。CPU強さはホスト指定（既定 weak）。
+    // 空席は安全側でCPU補完（capacity 席を必ず埋める）。CPU強さはホスト指定（既定 weak）。
     this.fillWithCpu(roomId, opts?.cpuStrength ?? DEFAULT_CPU);
     const seed = opts?.seed ?? Math.floor(Math.random() * 0x7fffffff);
     return ok(this.dealInto(room, cfg.value, seed));
@@ -315,7 +324,7 @@ export class RoomStore {
    */
   markDisconnected(socketId: string): { roomId: RoomId; seat: Seat } | null {
     for (const room of this.rooms.values()) {
-      for (const seat of SEATS) {
+      for (let seat = 0; seat < room.seats.length; seat++) {
         const slot = room.seats[seat];
         if (slot && slot.socketId === socketId) {
           slot.connected = false;
@@ -341,12 +350,11 @@ export class RoomStore {
   getPlayers(roomId: RoomId): readonly PlayerInfo[] {
     const room = this.rooms.get(roomId);
     if (!room) return [];
-    return SEATS.flatMap((s) => {
-      const slot = room.seats[s];
-      return slot
+    return room.seats.flatMap((slot, s) =>
+      slot
         ? [{ seat: s, name: slot.name, isCpu: slot.isCpu, connected: slot.connected, isHost: s === room.hostSeat }]
-        : [];
-    });
+        : [],
+    );
   }
 
   getState(roomId: RoomId): unknown {
@@ -357,10 +365,7 @@ export class RoomStore {
   seatSockets(roomId: RoomId): { seat: Seat; socketId: string }[] {
     const room = this.rooms.get(roomId);
     if (!room) return [];
-    return SEATS.flatMap((s) => {
-      const id = room.seats[s]?.socketId;
-      return id ? [{ seat: s, socketId: id }] : [];
-    });
+    return room.seats.flatMap((slot, s) => (slot?.socketId ? [{ seat: s, socketId: slot.socketId }] : []));
   }
 
   // --- モジュール委譲（グルー server.ts が配信・演出に使う。gameId で module を解決する） ---

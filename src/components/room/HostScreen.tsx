@@ -23,7 +23,10 @@ export function HostScreen() {
   const lastError = useGameStore((s) => s.lastError);
   const [name, setName] = useState("");
   const [gameId, setGameId] = useState<"sevens" | "concentration">("sevens");
+  const [seatCount, setSeatCount] = useState(4); // 神経衰弱の人数（2〜4）。7並べは4固定。
   const [creating, setCreating] = useState(false);
+
+  const isConcentration = gameId === "concentration";
 
   const createRoom = async () => {
     if (!name.trim()) return;
@@ -31,7 +34,8 @@ export function HostScreen() {
     try {
       await ensureConnected();
       useGameStore.getState().clearError();
-      await useGameStore.getState().createRoom(name.trim(), gameId);
+      // 7並べは4人固定＝seatCount 省略（サーバー側で4にクランプ）。神経衰弱のみ人数を渡す。
+      await useGameStore.getState().createRoom(name.trim(), gameId, isConcentration ? seatCount : undefined);
     } finally {
       setCreating(false);
     }
@@ -70,6 +74,31 @@ export function HostScreen() {
                 ))}
               </div>
             </div>
+
+            {isConcentration && (
+              <div className="w-full">
+                <p className="mb-2 text-base font-bold text-foreground">人数</p>
+                <div className="flex gap-2">
+                  {[2, 3, 4].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setSeatCount(n)}
+                      aria-pressed={seatCount === n}
+                      className={cn(
+                        "min-h-tap flex-1 rounded-xl border-2 py-3 text-lg font-bold transition-colors",
+                        seatCount === n
+                          ? "border-primary bg-primary text-white"
+                          : "border-gray-300 bg-white text-gray-900 hover:bg-gray-50",
+                      )}
+                    >
+                      {n}人
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 text-sm text-gray-500">足りない人数はCPUが入ります。</p>
+              </div>
+            )}
 
             <Input
               label="あなたの名前"

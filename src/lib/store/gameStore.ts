@@ -33,11 +33,13 @@ export interface GameStore {
   lastError: AdapterError | null;
   /** ホストが選んだゲーム（'sevens' | 'concentration'）。ロビー設定の出し分けに使う。 */
   gameId: string | null;
+  /** 部屋の席数（2..4・作成/入室時に確定）。PlayerList の行数に使う。 */
+  capacity: number | null;
   /** ホストが部屋を解散したとき true（#17）。UI はトップへ戻す。 */
   dissolved: boolean;
 
   connect(adapter: SevensAdapter): Promise<void>;
-  createRoom(name: string, gameId?: string): Promise<void>;
+  createRoom(name: string, gameId?: string, seatCount?: number): Promise<void>;
   joinRoom(passcode: Passcode, name: string): Promise<void>;
   start(opts?: StartOptions): Promise<void>;
   /** 同じ部屋・同設定で再戦（ホスト限定・#17）。 */
@@ -61,6 +63,7 @@ const INITIAL = {
   gameState: null,
   lastError: null,
   gameId: null,
+  capacity: null,
   dissolved: false,
 };
 
@@ -111,10 +114,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
     await adapter.connect();
   },
 
-  async createRoom(name, gameId) {
+  async createRoom(name, gameId, seatCount) {
     try {
-      const a = await requireAdapter().createRoom(name, gameId);
-      set({ roomId: a.roomId, mySeat: a.seat, myToken: a.token, passcode: a.passcode ?? null, gameId: gameId ?? "sevens" });
+      const a = await requireAdapter().createRoom(name, gameId, seatCount);
+      set({
+        roomId: a.roomId,
+        mySeat: a.seat,
+        myToken: a.token,
+        passcode: a.passcode ?? null,
+        gameId: gameId ?? "sevens",
+        capacity: a.capacity ?? null,
+      });
       saveSession({ roomId: a.roomId, seat: a.seat, token: a.token });
     } catch (e) {
       set({ lastError: e as AdapterError });
@@ -124,7 +134,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   async joinRoom(passcode, name) {
     try {
       const a = await requireAdapter().joinRoom(passcode, name);
-      set({ roomId: a.roomId, mySeat: a.seat, myToken: a.token });
+      set({ roomId: a.roomId, mySeat: a.seat, myToken: a.token, capacity: a.capacity ?? null });
       saveSession({ roomId: a.roomId, seat: a.seat, token: a.token });
     } catch (e) {
       set({ lastError: e as AdapterError });

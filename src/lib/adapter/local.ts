@@ -61,9 +61,9 @@ export class LocalAdapter implements SevensAdapter {
     this.socket.disconnect();
   }
 
-  createRoom(hostName: string, gameId = "sevens"): Promise<SeatAssignment> {
+  createRoom(hostName: string, gameId = "sevens", seatCount?: number): Promise<SeatAssignment> {
     return new Promise((resolve, reject) => {
-      this.s.emit("room:create", { name: hostName, gameId }, (res: SeatAssignment | AdapterError) => {
+      this.s.emit("room:create", { name: hostName, gameId, seatCount }, (res: SeatAssignment | AdapterError) => {
         if ("roomId" in res) resolve(res);
         else reject(res); // AdapterError をそのまま（code を保持）
       });
