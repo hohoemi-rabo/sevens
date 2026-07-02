@@ -37,6 +37,11 @@ export interface ConcentrationState {
   // 覗き見中の1枚（発動者だけに中身を見せる・§5.3）。中身は共有状態に出さず、
   // getView（module）が peek.seat の view にだけ face を載せる。発動者の次アクションで消える。
   readonly peek: { readonly seat: number; readonly pos: number } | null;
+  // 記憶保持率CPU（フェーズ4B）のための公開履歴。位置 → 最後に公開でめくられた時刻（revealClock 値）。
+  // face を持たない純メタ情報＝getView には載せない（記憶の中身はサーバーが持つ真値を CPU が recall で引く）。
+  // シャッフル/入れ替えで face が動いた位置は無効化（記憶が半分リセット＝§5.4 の狙いと整合）。
+  readonly seen: Record<number, number>;
+  readonly revealClock: number; // 公開めくりごとに +1 する単調カウンタ（recency＝age 計算と探索の巡回に使う）
 }
 
 export type CAction =
@@ -68,6 +73,8 @@ export function initGame(opts: InitOptions): ConcentrationState {
     shuffleSwapPairs: opts.config.shuffleSwapPairs,
     rngSeed: nextSeed(rng), // 場生成後の乱数系列から派生（以降のシャッフル特殊で使う）
     peek: null,
+    seen: {},
+    revealClock: 0,
   };
 }
 
@@ -122,7 +129,9 @@ function applyFlip(state: ConcentrationState, pos: number): ConcentrationState {
 
   const revealed = [...state.revealed, pos];
   const pending: Pending | null = revealed.length === 2 ? { type: "resolve" } : null;
-  return { ...state, revealed, pending };
+  // 公開でめくった＝全席が観測。記憶保持率CPUの recall 対象に加える（時刻＝revealClock を刻む）。
+  const seen = { ...state.seen, [pos]: state.revealClock };
+  return { ...state, revealed, pending, seen, revealClock: state.revealClock + 1 };
 }
 
 /**
@@ -137,7 +146,13 @@ function applySpecial(state: ConcentrationState, slot: Slot): ConcentrationState
     case "shuffle": {
       const rng = seededRng(state.rngSeed);
       const slots = applyShuffle(used, rng, state.shuffleSwapPairs);
-      return { ...state, slots, rngSeed: nextSeed(rng), revealed: [], pending: null, currentSeat: nextSeat(state) };
+      // face が動いた位置の記憶は無効化（部分シャッフルで記憶が半分リセット＝§5.4）。
+      // applyShuffle は未移動 slot を同一参照で返すので参照比較で動いた位置を特定できる。
+      const seen = { ...state.seen };
+      for (let i = 0; i < slots.length; i++) {
+        if (slots[i] !== used[i]) delete seen[used[i].pos];
+      }
+      return { ...state, slots, seen, rngSeed: nextSeed(rng), revealed: [], pending: null, currentSeat: nextSeat(state) };
     }
     case "swap":
       return { ...state, slots: used, revealed: [], pending: { type: "choose-swap" } };
@@ -149,7 +164,11 @@ function applySpecial(state: ConcentrationState, slot: Slot): ConcentrationState
 function applySwapChoice(state: ConcentrationState, a: number, b: number): ConcentrationState {
   if (state.pending?.type !== "choose-swap") throw new Error("no swap to choose");
   const slots = applySwap(state.slots, a, b);
-  return { ...state, slots, pending: null, currentSeat: nextSeat(state) }; // 効果適用で手番終了
+  // 入れ替えた2枚は face が動いた＝記憶を無効化（発動者以外の観測は古い位置のまま）。
+  const seen = { ...state.seen };
+  delete seen[a];
+  delete seen[b];
+  return { ...state, slots, seen, pending: null, currentSeat: nextSeat(state) }; // 効果適用で手番終了
 }
 
 function applyPeekChoice(state: ConcentrationState, pos: number): ConcentrationState {

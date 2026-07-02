@@ -5,7 +5,8 @@
 import { type ConcentrationState, type CAction, type Pending, handleAction, initGame } from "@/lib/concentration/state";
 import type { ConcentrationConfig } from "@/lib/concentration/board";
 import type { FaceCard } from "@/lib/concentration/cards";
-import type { GameModule, PlayerRef, Seat } from "@/lib/platform/gameModule";
+import { decideConcentration } from "@/lib/concentration/cpu";
+import type { CpuStrength, GameModule, PlayerRef, Seat } from "@/lib/platform/gameModule";
 
 /** 席ごとに配る可視状態。伏せ札は face を落として送る（中身は端末に届かない）。 */
 export interface ViewSlot {
@@ -85,19 +86,11 @@ export const concentrationModule: GameModule<ConcentrationState, CAction, Concen
   },
 
   /**
-   * 基本CPU（記憶なし＝memoryless / フェーズ3）。中身を覚えないので運まかせで揃える弱いCPU。
-   * pending に応じて resolve/選択を返し、通常は最小indexの伏せ札をめくる。記憶保持率CPU（弱中強）はフェーズ4。
+   * 記憶保持率CPU（弱中強・フェーズ4B）。過去に公開でめくられた札だけを保持率フィルタ越しに思い出し、
+   * 揃えられるなら揃える／無ければ探索する（cpu/decide.ts）。決定論のみ。強さは席ごとに server が渡す。
    */
-  decideAuto(state: ConcentrationState): CAction {
-    if (state.pending?.type === "resolve") return { type: "resolve" };
-    const fd = state.slots.filter((sl) => sl.status === "facedown").map((sl) => sl.pos);
-    if (state.pending?.type === "choose-swap") return { type: "swap", a: fd[0], b: fd[1] };
-    if (state.pending?.type === "choose-peek") return { type: "peek", pos: fd[0] };
-    if (state.revealed.length === 1) {
-      const other = fd.find((p) => p !== state.revealed[0])!;
-      return { type: "flip", pos: other };
-    }
-    return { type: "flip", pos: fd[0] };
+  decideAuto(state: ConcentrationState, playerId: string, strength: CpuStrength): CAction {
+    return decideConcentration(state, playerId, strength);
   },
 
   autoResolvable(state: ConcentrationState): boolean {
