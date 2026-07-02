@@ -31,7 +31,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - ✅ **フェーズ3（Socket.io・秘匿）**: マルチゲーム化・`getView` 中身秘匿・席ごと配信・`player:action` 統一・CPU補完（基本CPU）。in-process 結合テストで秘匿/覗き見私的性/全局完走を機械保証。
 - ✅ **フェーズ4A（遊べるMVP）**: ゲーム選択・神経衰弱ブラウザUI・特殊カードSVG・結果画面。**ブラウザで通し可**。
 - ✅ **フェーズ4B（記憶保持率CPU 弱/中/強）**: `src/lib/concentration/cpu/`（`retention.ts`＝保持率＋recall／`decide.ts`＝手決め／`index.ts`）＋`concentrationModule.decideAuto` を `decideConcentration(state,playerId,strength)` へ委譲。**公開でめくられた札だけ**を保持率フィルタ越しに思い出す（初手全知＝無敵を回避）。記憶は state（`seen`/`revealClock`）に永続。アルゴリズムは1本を保持率でパラメタ化（弱は recall がほぼ空＝運まかせ）。**探索2枚目を `floor(revealClock/2)` で巡回＝全候補走査で必ず終局**（膠着回避）。全局到達テスト＋実RoomStore経路スモークで機械保証（強ほど速く揃う）。
-- ▶ **残り**: **4C**＝音声・効果音（`diffConcentrationView`＋`useConcentrationAudioEffects`＋SfxName拡張）／演出アニメ（めくり・伏せ戻し・シャッフル予告・覗き見の数秒タイマー）。**4D**＝既定値チューニング（保持率含む）＋席数可変（2〜4人・現状は4席CPU補完固定）。将来＝坊主めくり等の追加・クラウド。
+- ✅ **フェーズ4C（音声・効果音／演出アニメ）**: 音＝`src/lib/concentration/events.ts`（`diffConcentrationView`＝view差分→`CAudioEvent`：deal/flip/match/miss/special/peek/end）＋`src/lib/audio/useConcentrationAudio.ts`（`useAudioEffects` 対のフック・ガード逆・`ConcentrationBoard` でマウント）＋`SfxName` に `flip/match/miss/special` 加算（7並べ不変）＋読み上げ（そろった！/ざんねん/シャッフルします！等）。演出＝`CardGrid` の2面**3Dフリップ**（めくり／伏せ戻し・`FlipCard` が直近faces保持＝面が消えても裏回転を描く）＋**覗き見3秒ローカル自動非表示**＋**シャッフル予告バナー＋伏せ札ゆらし**（`ConcentrationBoard` の ref差分）。CSSは `globals.css` に初導入（`prefers-reduced-motion` 対応）。**シャッフルの"数秒見せる"はクライアント演出のみ**（faces のサーバーリビール窓は将来）。mp3未配置でも無音フォールバック。
+- ▶ **残り**: **4D**＝既定値チューニング（保持率含む）＋席数可変（2〜4人・現状は4席CPU補完固定）。将来＝坊主めくり等の追加・シャッフルfacesのサーバーリビール窓・クラウド。
 
 **アーキテクチャ確定（統合）**:
 - `src/lib/platform/gameModule.ts` — `GameModule<State,Action,View,Config>` 契約: `createInitialState/handleAction/getView/isFinished/currentSeat/decideAuto/autoResolvable/transitions`＋`viewIsPublic`。`CpuStrength`（弱/中/強の枠は platform 側）/`PlayerRef`/`GameTransition` もここ。

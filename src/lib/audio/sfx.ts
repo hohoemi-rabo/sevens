@@ -4,9 +4,31 @@
 // SSR / 非ブラウザでは window/Audio が無いので no-op。
 
 /** 効果音の論理名。public/audio/<name>.mp3 と対応する。 */
-export type SfxName = "shuffle" | "play" | "pass" | "applause" | "eliminated" | "end";
+// 7並べ: shuffle/play/pass/applause/eliminated/end。神経衰弱（4C）で flip/match/miss/special を加算。
+export type SfxName =
+  | "shuffle"
+  | "play"
+  | "pass"
+  | "applause"
+  | "eliminated"
+  | "end"
+  | "flip"
+  | "match"
+  | "miss"
+  | "special";
 
-const SFX_NAMES: readonly SfxName[] = ["shuffle", "play", "pass", "applause", "eliminated", "end"];
+const SFX_NAMES: readonly SfxName[] = [
+  "shuffle",
+  "play",
+  "pass",
+  "applause",
+  "eliminated",
+  "end",
+  "flip",
+  "match",
+  "miss",
+  "special",
+];
 
 const SRC = (name: SfxName) => `/audio/${name}.mp3`;
 

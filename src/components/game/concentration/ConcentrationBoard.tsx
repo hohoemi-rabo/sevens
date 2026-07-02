@@ -8,10 +8,11 @@
  * （2枚が数秒見えてから揃う/伏せ戻る＝「見せてから伏せる」）。CPU/自動進行はサーバーが担う。
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useGameConnection } from "@/lib/store/useGameConnection";
 import { useBgm } from "@/lib/audio/useBgm";
+import { useConcentrationAudio } from "@/lib/audio/useConcentrationAudio";
 import { useGameStore } from "@/lib/store/gameStore";
 import { ScreenContainer } from "@/components/ui";
 import { GameMenu } from "@/components/game/GameMenu";
@@ -32,6 +33,7 @@ function Centered({ children }: { children: React.ReactNode }) {
 export function ConcentrationBoard() {
   useGameConnection(); // 遷移で socket を落とさない
   useBgm();
+  useConcentrationAudio(); // ゲームイベントを効果音・読み上げにひも付け（4C）
 
   const router = useRouter();
   // GameRouter が view 形状で神経衰弱を保証済みなので ConcentrationView に narrow。
@@ -54,6 +56,27 @@ export function ConcentrationBoard() {
   useEffect(() => {
     if (pendingType !== "choose-swap") setSwapPicks([]);
   }, [pendingType]);
+
+  // シャッフル予告（4C）: 新たにシャッフル特殊が発動（used）したら数秒バナー＋ゆらし。
+  const shuffleRef = useRef<ConcentrationView | null>(null);
+  const [shuffleFlash, setShuffleFlash] = useState(false);
+  useEffect(() => {
+    const prev = shuffleRef.current;
+    shuffleRef.current = view;
+    if (!prev || !view) return;
+    const prevUsed = new Set(prev.slots.filter((s) => s.status === "used").map((s) => s.pos));
+    const started = view.slots.some(
+      (s) =>
+        s.status === "used" &&
+        s.face?.type === "special" &&
+        s.face.special.kind === "shuffle" &&
+        !prevUsed.has(s.pos),
+    );
+    if (!started) return;
+    setShuffleFlash(true);
+    const t = setTimeout(() => setShuffleFlash(false), 1800);
+    return () => clearTimeout(t);
+  }, [view]);
 
   if (!view && mySeat === null) return <Centered>部屋が見つかりません</Centered>;
   if (!view || mySeat === null) return <Centered>準備中…</Centered>;
@@ -108,6 +131,14 @@ export function ConcentrationBoard() {
         <GameMenu onBackToTitle={backToTitle} />
       </div>
 
+      {shuffleFlash && (
+        <div className="pointer-events-none fixed inset-x-0 top-1/3 z-30 flex justify-center" role="status">
+          <span className="animate-wobble rounded-2xl bg-purple-600/95 px-8 py-4 text-3xl font-extrabold text-white shadow-2xl">
+            シャッフルします！
+          </span>
+        </div>
+      )}
+
       <div className="mx-auto flex max-w-6xl flex-col gap-3 tall:gap-4">
         {connection !== "connected" && (
           <p className="rounded-xl bg-amber-500 px-4 py-2 text-center font-bold text-gray-900" role="status">
@@ -122,7 +153,7 @@ export function ConcentrationBoard() {
         ) : (
           <>
             <TurnPrompt view={view} mySeat={mySeat} />
-            <CardGrid view={view} swapPicks={swapPicks} canPick={canPick} onPick={onPick} />
+            <CardGrid view={view} swapPicks={swapPicks} canPick={canPick} onPick={onPick} shuffling={shuffleFlash} />
           </>
         )}
       </div>
