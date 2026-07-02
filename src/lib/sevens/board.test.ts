@@ -80,23 +80,35 @@ describe('canPlace', () => {
 describe('canPlace（A-Kループ・ローカルルール wrapAround=true）', () => {
   const board = initBoard('diamond7')
 
-  it('7〜K が並べば A を出せる（Kの次＝ループ）', () => {
+  it('7のみ（向き未決）は 6 も 8 も出せる＝最初の一手で向きが決まる', () => {
+    const b: BoardState = { ...board, h: [7] }
+    expect(canPlace(b, c('h', 6), true)).toBe(true)
+    expect(canPlace(b, c('h', 8), true)).toBe(true)
+  })
+
+  it('8を出す（上回り確定）と下方向の6は封じられる', () => {
+    const b: BoardState = { ...board, h: [7, 8] }
+    expect(canPlace(b, c('h', 9), true)).toBe(true) // 上方向は継続
+    expect(canPlace(b, c('h', 6), true)).toBe(false) // 下方向は出せない
+  })
+
+  it('7〜K が並べば A だけ出せる（Kの次＝A・6は出せない）', () => {
     const b: BoardState = { ...board, h: [7, 8, 9, 10, 11, 12, 13] }
-    expect(canPlace(b, c('h', 1), true)).toBe(true) // A（2が無くても）
-    expect(canPlace(b, c('h', 6), true)).toBe(true) // 下方向の端も従来どおり可
+    expect(canPlace(b, c('h', 1), true)).toBe(true) // A（上端Kの次）
+    expect(canPlace(b, c('h', 6), true)).toBe(false) // 下方向は封じられる（上回り確定）
     expect(canPlace(b, c('h', 2), true)).toBe(false) // 2はまだ端ではない
   })
 
-  it('A を出した後は通常どおり 2 が出せる', () => {
+  it('A を出した後は 2 が出せる（上回り継続・6は不可）', () => {
     const b: BoardState = { ...board, h: [1, 7, 8, 9, 10, 11, 12, 13] }
-    expect(canPlace(b, c('h', 2), true)).toBe(true) // A の隣
-    expect(canPlace(b, c('h', 6), true)).toBe(true) // 7側の端
+    expect(canPlace(b, c('h', 2), true)).toBe(true) // A の次（上回り継続）
+    expect(canPlace(b, c('h', 6), true)).toBe(false) // 下方向は出せない
   })
 
-  it('7〜A が並べば K を出せる（Aの次＝ループ）', () => {
+  it('7〜A（下回り）が並べば K だけ出せる（Aの次＝K・8は不可）', () => {
     const b: BoardState = { ...board, h: [1, 2, 3, 4, 5, 6, 7] }
-    expect(canPlace(b, c('h', 13), true)).toBe(true) // K（下端Aの隣）
-    expect(canPlace(b, c('h', 8), true)).toBe(true) // 上方向の端も可
+    expect(canPlace(b, c('h', 13), true)).toBe(true) // K（下端Aの次）
+    expect(canPlace(b, c('h', 8), true)).toBe(false) // 上方向は封じられる（下回り確定）
   })
 
   it('13枚そろったスートには出せる札が無い', () => {

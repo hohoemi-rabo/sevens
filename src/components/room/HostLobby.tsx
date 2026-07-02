@@ -174,7 +174,7 @@ export function HostLobby() {
         </div>
         <span className="max-w-xs text-center text-sm text-gray-500">
           {wrapAround
-            ? "K の次に A、A の次に K を出せます（一周でつながる）。"
+            ? "7から片方向にぐるっと一周します（Kの次はA、Aの次はK）。最初に出した向きに進みます。"
             : "K と A は反対の端どうしでつながりません。"}
         </span>
       </div>

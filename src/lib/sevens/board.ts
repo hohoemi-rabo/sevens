@@ -69,9 +69,10 @@ export function runAround7(pile: readonly Rank[]): { low: Rank; high: Rank } | n
  * - 7が配置済み: 連続ブロックの low-1（下方向）か high+1（上方向）のみ可
  *   （連続ブロックの最大性より、これらは必ず未配置）。範囲外（K超・A未満）は不可。
  *
- * `wrapAround`（A-Kループ・ローカルルール）が true のときは、A(1)とK(13)を隣接扱いにする＝
- * 各スートを13枚の輪とみなす。例: 7〜Kが並べばA(2の有無に関わらず)を、7〜Aが並べばKを出せる。
- * 標準ルール（既定 false）ではA/Kは反対側の行き止まりでつながらない。
+ * `wrapAround`（A-Kループ・ローカルルール）が true のときは、各スートを **13枚の一方向リング** とみなす＝
+ * 7から選んだ一方向にだけ一周する。最初の一手（6 or 8）で回る向きが決まり、以降はその向きの端だけ伸ばせる。
+ * 例: 上回りなら 7→8→…→K→A→2→…→6（Kの次はA だけ・下方向の6は出せない）。下回りは 7→6→…→A→K→…→8。
+ * 標準ルール（既定 false）では7を中心に上下両方向へ伸び、A/Kは反対側の行き止まりでつながらない。
  */
 export function canPlace(board: BoardState, card: Card, wrapAround = false): boolean {
   const pile = board[card.suit]
@@ -84,14 +85,21 @@ export function canPlace(board: BoardState, card: Card, wrapAround = false): boo
     return card.rank === run.low - 1 || card.rank === run.high + 1
   }
 
-  // A-Kループ: 13枚そろえば出せる札は無い（includes で弾かれるが安全に）。
+  // A-Kループ（一方向リング）: 13枚そろえば出せる札は無い（includes で弾かれるが安全に）。
   if (set.size >= 13) return false
   // 7を含む連続弧の両端を巡回で求める。size<13＝必ず隙間があるので無限ループしない。
   let low: Rank = PIVOT
   while (set.has(cyclicDown(low))) low = cyclicDown(low)
   let high: Rank = PIVOT
   while (set.has(cyclicUp(high))) high = cyclicUp(high)
-  return card.rank === cyclicDown(low) || card.rank === cyclicUp(high)
+  const upStarted = set.has(cyclicUp(PIVOT)) // 8 が場にある＝上回りに踏み出した
+  const downStarted = set.has(cyclicDown(PIVOT)) // 6 が場にある＝下回りに踏み出した
+  // 脱落の強制放出などで両方向に札がある異常系は両端を許可し、完成不能（膠着）を避ける。
+  if (upStarted && downStarted) return card.rank === cyclicUp(high) || card.rank === cyclicDown(low)
+  // 向きが決まっていればその端だけ。未決（7のみ）は6/8どちらも可＝最初の一手で向きが決まる。
+  if (!downStarted && card.rank === cyclicUp(high)) return true
+  if (!upStarted && card.rank === cyclicDown(low)) return true
+  return false
 }
 
 /** ランクを昇順を保って追加した新しい配列を返す（非破壊）。 */

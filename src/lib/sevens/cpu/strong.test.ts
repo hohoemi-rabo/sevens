@@ -147,6 +147,29 @@ describe('全員CPU（強）・混在で対局が最後まで進む', () => {
     },
   )
 
+  it.each([1, 2, 7, 2024])(
+    'A-Kループ×有限パス（脱落あり＝強制放出で向きが乱れても）膠着せず終局する seed=%i',
+    (seed) => {
+      // 有限パスは脱落→placeForced で一方向リングが両向きに乱れうる。canPlace の両端フォールバックで
+      // 完成不能（膠着）にならず必ず終局することを機械保証する。
+      let state = initGame({
+        players: ['a', 'b', 'c', 'd'].map((id) => ({ id, name: id.toUpperCase() })),
+        maxPass: 1,
+        startMode: 'all7',
+        wrapAround: true,
+        rng: seededRng(seed),
+      })
+      let guard = 0
+      while (state.phase === 'playing' && guard++ < 10000) {
+        const player = currentPlayer(state)
+        const action = decideStrong(state, player.id)
+        state = action.type === 'play' ? playCard(state, player.id, action.card) : pass(state, player.id)
+      }
+      expect(state.phase).toBe('ended')
+      expect(state.players.every((p) => p.status === 'finished' || p.status === 'eliminated')).toBe(true)
+    },
+  )
+
   it.each([3, 11, 42])('seed=%i で弱/中/強 混在でも終局する', (seed) => {
     const deciders = [decideWeak, decideMedium, decideStrong, decideWeak]
     let state = initGame({
